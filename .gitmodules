@@ -1,0 +1,9 @@
+[submodule "infrastructure"]
+	path = infrastructure
+	url = https://github.com/cronnecture/infrastructure.git
+[submodule "billing"]
+	path = billing
+	url = https://github.com/cronnecture/billing.git
+[submodule "agent-core"]
+	path = agent-core
+	url = https://github.com/cronnecture/agent-core.git
