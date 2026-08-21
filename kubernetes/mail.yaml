@@ -1,0 +1,170 @@
+# Live Stalwart mail. Source of truth for the mail namespace.
+# PVC stalwart-data is never deleted. hostPorts 25/587 stay.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mail
+  labels:
+    cronnecture.io/role: mail
+    cronnecture.com/managed-by: stack
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: stalwart-data
+  namespace: mail
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stalwart-config
+  namespace: mail
+  labels:
+    cronnecture.com/managed-by: stack
+data:
+  config.toml: "# Stalwart config \u2014 managed by Ansible (mail_server role).\n\
+    # Minimal v0.11 bootstrap config; see resources/config/config.toml upstream.\n\
+    \n[server]\nhostname = \"mail.cronnecture.com\"\n\n[server.listener.\"smtp\"]\n\
+    bind = [\"[::]:25\"]\nprotocol = \"smtp\"\n\n[server.listener.\"submission\"]\n\
+    bind = [\"[::]:587\"]\nprotocol = \"smtp\"\n\n[server.listener.\"imap\"]\nbind\
+    \ = [\"[::]:993\"]\nprotocol = \"imap\"\ntls.implicit = true\n\n[server.listener.\"\
+    https\"]\nbind = [\"[::]:8080\"]\nprotocol = \"http\"\n\n[storage]\ndata = \"\
+    rocksdb\"\nfts = \"rocksdb\"\nblob = \"rocksdb\"\nlookup = \"rocksdb\"\ndirectory\
+    \ = \"internal\"\n\n[store.\"rocksdb\"]\ntype = \"rocksdb\"\npath = \"/opt/stalwart-mail/data\"\
+    \ncompression = \"lz4\"\n\n[directory.\"internal\"]\ntype = \"internal\"\nstore\
+    \ = \"rocksdb\"\n\n[authentication.fallback-admin]\nuser = \"admin\"\nsecret =\
+    \ \"tAM7do9Mku9GjK-JtdwU7QodvKSEk8AG\"\n\n[tracer.\"stdout\"]\ntype = \"stdout\"\
+    \nlevel = \"info\"\nenable = true\n\n[session.auth]\nmechanisms = \"[plain, login]\"\
+    \n\n[session.data]\nmax-message-size = 26214400\n# Trusted sieve: copy inbound\
+    \ mail for key addresses to a personal inbox (phone alerts).\n# redirect :copy\
+    \ keeps local delivery; outbound From/auth for outreach is unchanged.\nscript\
+    \ = \"'copy-to-phone'\"\n\n[sieve.trusted.scripts.copy-to-phone]\ncontents = '''\n\
+    require [\"envelope\", \"copy\"];\n\nif envelope :is \"to\" [\"support@cronnecture.com\"\
+    , \"info@cronnecture.com\", \"svenbraad@cronnecture.com\"] {\n    redirect :copy\
+    \ \"svenbraad.work@gmail.com\";\n}\n'''\n"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stalwart
+  namespace: mail
+  labels:
+    app: stalwart
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: stalwart
+  template:
+    metadata:
+      labels:
+        app: stalwart
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: 'true'
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      initContainers:
+      - name: init-data-dirs
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - mkdir -p /opt/stalwart-mail/data/queue && chmod -R 777 /opt/stalwart-mail/data
+        volumeMounts:
+        - name: data
+          mountPath: /opt/stalwart-mail/data
+      containers:
+      - name: stalwart
+        image: stalwartlabs/mail-server:v0.11.8
+        ports:
+        - name: smtp
+          containerPort: 25
+          hostPort: 25
+          protocol: TCP
+        - name: submission
+          containerPort: 587
+          hostPort: 587
+          protocol: TCP
+        - name: imap
+          containerPort: 993
+        - name: http
+          containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /opt/stalwart-mail/etc
+          readOnly: true
+        - name: data
+          mountPath: /opt/stalwart-mail/data
+        startupProbe:
+          tcpSocket:
+            port: 8080
+          periodSeconds: 5
+          failureThreshold: 24
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+      volumes:
+      - name: config
+        configMap:
+          name: stalwart-config
+          items:
+          - key: config.toml
+            path: config.toml
+      - name: data
+        persistentVolumeClaim:
+          claimName: stalwart-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stalwart
+  namespace: mail
+  labels:
+    app: stalwart
+    cronnecture.com/managed-by: stack
+spec:
+  selector:
+    app: stalwart
+  ports:
+  - name: smtp
+    port: 25
+    targetPort: smtp
+  - name: submission
+    port: 587
+    targetPort: submission
+  - name: imap
+    port: 993
+    targetPort: imap
+  - name: http
+    port: 8080
+    targetPort: http

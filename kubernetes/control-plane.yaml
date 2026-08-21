@@ -1,0 +1,206 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cronnecture-system
+  labels:
+    cronnecture.com/component: control-plane
+    cronnecture.com/managed-by: stack
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-core
+  namespace: cronnecture-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cronnecture-agent-core
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "namespaces", "services", "configmaps", "endpoints", "persistentvolumeclaims", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces", "services", "configmaps"]
+  verbs: ["create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["traefik.io"]
+  resources: ["ingressroutes"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cronnecture-agent-core
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cronnecture-agent-core
+subjects:
+- kind: ServiceAccount
+  name: agent-core
+  namespace: cronnecture-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-core
+  namespace: cronnecture-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-core
+  template:
+    metadata:
+      labels:
+        app: agent-core
+    spec:
+      serviceAccountName: agent-core
+      nodeSelector:
+        kubernetes.io/hostname: cp-master-01
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: agent-core
+        image: cronnecture-agent-core:local
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: CLOUDFLARE_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: account_id
+              optional: true
+        - name: CLOUDFLARE_ZONE_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: zone_id
+              optional: true
+        - name: CLOUDFLARE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: tunnel_token
+              optional: true
+        - name: CLOUDFLARE_TUNNEL_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: tunnel_id
+              optional: true
+        - name: CLOUDFLARE_HTTP_ORIGIN
+          value: "http://10.43.125.134:80"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-core
+  namespace: cronnecture-system
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-core
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: cronnecture-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: cp-master-01
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: dashboard
+        image: cronnecture-dashboard:local
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: cronnecture-system
+spec:
+  type: ClusterIP
+  selector:
+    app: dashboard
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: stack-control-plane
+  namespace: cronnecture-system
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`stack.cronnecture.com`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: agent-core
+          port: 8000
+    - match: Host(`stack.cronnecture.com`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: dashboard
+          port: 80

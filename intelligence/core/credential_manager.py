@@ -84,8 +84,10 @@ class IntelligentCredentialManager:
             'oauth_secret': CredentialPolicy(min_length=40, rotation_days=45)
         }
         
-        logger.info("Cronnecture Credential Manager initialized")
-        
+        self.allowed_namespace = os.environ.get(
+            "CREDENTIAL_NAMESPACE", "cronnecture-intelligence"
+        )
+
     def _init_encryption(self) -> Fernet:
         """Initialize Fernet encryption with master key"""
         # Derive key from master key using PBKDF2
@@ -165,6 +167,12 @@ class IntelligentCredentialManager:
                          tags: Optional[Dict[str, str]] = None,
                          custom_value: Optional[str] = None) -> str:
         """Create new managed credential"""
+        if namespace != self.allowed_namespace:
+            logger.warning(
+                f"Refusing credential namespace {namespace}; "
+                f"forcing {self.allowed_namespace}"
+            )
+            namespace = self.allowed_namespace
         
         # Generate or use provided value
         if custom_value:
@@ -204,6 +212,12 @@ class IntelligentCredentialManager:
         
     def _create_k8s_secret(self, credential: Credential):
         """Create Kubernetes secret for credential"""
+        if credential.namespace != self.allowed_namespace:
+            logger.error(
+                f"Refusing to write secret {credential.secret_name} "
+                f"into {credential.namespace}"
+            )
+            return
         try:
             secret_body = client.V1Secret(
                 metadata=client.V1ObjectMeta(
@@ -265,6 +279,12 @@ class IntelligentCredentialManager:
         
     def _update_k8s_secret(self, credential: Credential):
         """Update Kubernetes secret"""
+        if credential.namespace != self.allowed_namespace:
+            logger.error(
+                f"Refusing to update secret {credential.secret_name} "
+                f"in {credential.namespace}"
+            )
+            return
         try:
             secret_body = client.V1Secret(
                 metadata=client.V1ObjectMeta(
@@ -395,29 +415,10 @@ def main():
     
     # Initialize credential manager
     manager = IntelligentCredentialManager()
-    
-    # Create some example credentials for testing
-    logger.info("Creating example enterprise credentials...")
-    
-    manager.create_credential(
-        name="postgres_admin_password",
-        service_type="database",
-        namespace="identity",
-        tags={"service_type": "database", "environment": "production"}
-    )
-    
-    manager.create_credential(
-        name="api_master_key",
-        service_type="api_key",
-        namespace="cronnecture-intelligence",
-        tags={"service_type": "api_key", "scope": "master"}
-    )
-    
-    manager.create_credential(
-        name="cloudflare_tunnel_secret",
-        service_type="oauth_secret",
-        namespace="networking",
-        tags={"service_type": "oauth_secret", "provider": "cloudflare"}
+
+    logger.info(
+        f"Credential manager restricted to namespace {manager.allowed_namespace}; "
+        "not seeding secrets in identity or networking"
     )
     
     # Main service loop

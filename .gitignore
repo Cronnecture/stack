@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+dashboard/node_modules/
+dashboard/dist/
+.DS_Store

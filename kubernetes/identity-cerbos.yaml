@@ -1,0 +1,151 @@
+# Cerbos policies for the identity namespace.
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cerbos-config
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+data:
+  config.yaml: "server:\n  httpListenAddr: \":3592\"\n  grpcListenAddr: \":3593\"\n\
+    storage:\n  driver: disk\n  disk:\n    directory: /policies\n    watchForChanges:\
+    \ true\naudit:\n  enabled: true\n  backend: local\n  local:\n    storagePath:\
+    \ /tmp/cerbos-audit\n"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cerbos-policies
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+data:
+  derived_roles_ops.yaml: "apiVersion: api.cerbos.dev/v1\nderivedRoles:\n  name: ops_roles\n\
+    \  definitions:\n    - name: superadmin\n      parentRoles: [\"user\"]\n     \
+    \ condition:\n        match:\n          expr: request.principal.attr.role == \"\
+    superadmin\"\n    - name: admin\n      parentRoles: [\"user\"]\n      condition:\n\
+    \        match:\n          expr: request.principal.attr.role in [\"superadmin\"\
+    , \"admin\"]\n    - name: operator\n      parentRoles: [\"user\"]\n      condition:\n\
+    \        match:\n          expr: request.principal.attr.role in [\"superadmin\"\
+    , \"admin\", \"operator\"]\n    - name: sales\n      parentRoles: [\"user\"]\n\
+    \      condition:\n        match:\n          expr: request.principal.attr.role\
+    \ in [\"superadmin\", \"admin\", \"sales\"]\n    - name: readonly\n      parentRoles:\
+    \ [\"user\"]\n      condition:\n        match:\n          expr: request.principal.attr.role\
+    \ in [\"superadmin\", \"admin\", \"operator\", \"sales\", \"readonly\"]\n"
+  resource_ops_api.yaml: "apiVersion: api.cerbos.dev/v1\nresourcePolicy:\n  version:\
+    \ \"default\"\n  resource: \"ops_api\"\n  importDerivedRoles:\n    - ops_roles\n\
+    \  rules:\n    - actions: [\"*\"]\n      effect: EFFECT_ALLOW\n      derivedRoles:\
+    \ [\"superadmin\"]\n    - actions: [\"read\", \"list\", \"manage_clients\", \"\
+    manage_billing\", \"manage_settings\"]\n      effect: EFFECT_ALLOW\n      derivedRoles:\
+    \ [\"admin\"]\n    - actions: [\"read\", \"list\", \"manage_clients\"]\n     \
+    \ effect: EFFECT_ALLOW\n      derivedRoles: [\"operator\"]\n    - actions: [\"\
+    read\", \"list\", \"manage_leads\"]\n      effect: EFFECT_ALLOW\n      derivedRoles:\
+    \ [\"sales\"]\n    - actions: [\"read\", \"list\"]\n      effect: EFFECT_ALLOW\n\
+    \      derivedRoles: [\"readonly\"]\n    # DENY by attr.role (not derivedRoles)\
+    \ \u2014 ladder-derived roles would also match admin/superadmin.\n    - actions:\
+    \ [\"reset_fleet\", \"destroy\"]\n      effect: EFFECT_DENY\n      roles: [\"\
+    user\"]\n      condition:\n        match:\n          expr: request.principal.attr.role\
+    \ in [\"operator\", \"sales\", \"readonly\"]\n"
+  resource_client.yaml: "apiVersion: api.cerbos.dev/v1\nresourcePolicy:\n  version:\
+    \ \"default\"\n  resource: \"client\"\n  importDerivedRoles:\n    - ops_roles\n\
+    \  rules:\n    - actions: [\"*\"]\n      effect: EFFECT_ALLOW\n      derivedRoles:\
+    \ [\"superadmin\", \"admin\"]\n    - actions: [\"view\", \"update\", \"provision\"\
+    ]\n      effect: EFFECT_ALLOW\n      derivedRoles: [\"operator\"]\n    - actions:\
+    \ [\"view\"]\n      effect: EFFECT_ALLOW\n      derivedRoles: [\"sales\", \"readonly\"\
+    ]\n    - actions: [\"delete\", \"reset\"]\n      effect: EFFECT_DENY\n      roles:\
+    \ [\"user\"]\n      condition:\n        match:\n          expr: request.principal.attr.role\
+    \ in [\"operator\", \"sales\", \"readonly\"]\n"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cerbos
+  namespace: identity
+  labels:
+    app: cerbos
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cerbos
+  template:
+    metadata:
+      labels:
+        app: cerbos
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: cerbos
+        image: ghcr.io/cerbos/cerbos:0.43.0
+        args:
+        - server
+        - --config=/config/config.yaml
+        ports:
+        - name: http
+          containerPort: 3592
+        - name: grpc
+          containerPort: 3593
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: policies
+          mountPath: /policies
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /_cerbos/health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /_cerbos/health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      volumes:
+      - name: config
+        configMap:
+          name: cerbos-config
+      - name: policies
+        configMap:
+          name: cerbos-policies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cerbos
+  namespace: identity
+  labels:
+    app: cerbos
+    cronnecture.com/managed-by: stack
+spec:
+  selector:
+    app: cerbos
+  ports:
+  - name: http
+    port: 3592
+    targetPort: http
+  - name: grpc
+    port: 3593
+    targetPort: grpc

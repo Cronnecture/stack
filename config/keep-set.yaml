@@ -1,0 +1,53 @@
+# Namespaces this stack must never wipe or replace.
+keep:
+  - mail
+  - identity
+  - platform
+  - kube-system
+  - cert-manager
+  - cronnecture-intelligence
+  - cronnecture-system
+  - client-noorddriveautos
+owned_by_stack:
+  mail:
+    manifests:
+      - kubernetes/mail.yaml
+    secret: none
+    pvcs:
+      - stalwart-data
+  identity:
+    manifests:
+      - kubernetes/identity.yaml
+      - kubernetes/identity-cerbos.yaml
+      - kubernetes/identity-ingress.yaml
+    secret: identity-secrets
+    pvcs:
+      - identity-postgres
+      - identity-redis
+      - vaultwarden-data
+      - passbolt-mariadb
+      - passbolt-data
+      - passbolt-jwt
+      - logto-postgres
+protected_domains:
+  - cronnecture.com
+  - www.cronnecture.com
+  - cronnecture.nl
+  - www.cronnecture.nl
+  - mail.cronnecture.com
+  - webmail.cronnecture.com
+  - vault.cronnecture.com
+  - ops.cronnecture.com
+  - client.cronnecture.com
+  - passbolt.cronnecture.com
+  - id.cronnecture.com
+  - id-admin.cronnecture.com
+  - passkeys.cronnecture.com
+  - auth.cronnecture.com
+  - stack.cronnecture.com
+public_ports:
+  mail:
+    - 25/tcp
+    - 587/tcp
+  operator:
+    - 22/tcp  # limited by UFW source IP

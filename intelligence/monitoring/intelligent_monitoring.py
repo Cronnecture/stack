@@ -335,7 +335,7 @@ class AnomalyDetector:
                 description=description,
                 affected_resource=f"{metric.node_name or 'cluster'}:{metric.namespace or 'all'}",
                 suggested_actions=suggested_actions,
-                auto_remediation=severity in ["low", "medium"]
+                auto_remediation=False
             )
             
         return None
@@ -482,62 +482,24 @@ class SelfHealingEngine:
         self.apps_client = apps_client
         self.remediation_history = {}
         self.enabled_remediations = {
-            "pod_restart": True,
-            "pod_scaling": True,
-            "resource_cleanup": True,
-            "config_adjustment": False  # Disabled by default for safety
+            "pod_restart": False,
+            "pod_scaling": False,
+            "resource_cleanup": False,
+            "config_adjustment": False
         }
         
     async def execute_remediation(self, anomaly: Anomaly) -> bool:
-        """Execute automated remediation"""
-        if not anomaly.auto_remediation:
-            logger.info(f"Auto-remediation disabled for anomaly {anomaly.id}")
-            return False
-            
-        # Track remediation attempts
-        resource_key = anomaly.affected_resource
-        now = datetime.now()
-        
-        if resource_key not in self.remediation_history:
-            self.remediation_history[resource_key] = []
-            
-        # Check cooldown period (prevent too frequent remediations)
-        recent_remediations = [
-            r for r in self.remediation_history[resource_key] 
-            if (now - r).total_seconds() < 1800  # 30 minutes
-        ]
-        
-        if len(recent_remediations) >= 3:
-            logger.warning(f"Too many recent remediations for {resource_key}, skipping")
-            return False
-            
-        # Execute remediation based on anomaly type
-        success = False
-        
-        if "pod_restart" in anomaly.metric_name and self.enabled_remediations["pod_restart"]:
-            success = await self._restart_problematic_pods(anomaly)
-            
-        elif "cpu" in anomaly.metric_name or "memory" in anomaly.metric_name:
-            if self.enabled_remediations["pod_scaling"]:
-                success = await self._scale_resources(anomaly)
-                
-        elif "disk" in anomaly.metric_name and self.enabled_remediations["resource_cleanup"]:
-            success = await self._cleanup_disk_space(anomaly)
-            
-        if success:
-            self.remediation_history[resource_key].append(now)
-            logger.info(f"Successfully executed remediation for anomaly {anomaly.id}")
-        else:
-            logger.warning(f"Failed to execute remediation for anomaly {anomaly.id}")
-            
-        return success
-        
+        """Execute automated remediation — disabled so mail/identity are never mutated."""
+        logger.info("Auto-remediation is disabled for the mail/identity overlay")
+        return False
+
     async def _restart_problematic_pods(self, anomaly: Anomaly) -> bool:
         """Restart pods with high restart counts"""
         try:
             namespace = anomaly.affected_resource.split(':')[1]
-            if namespace == "all":
-                return False  # Too broad, skip
+            if namespace in {"mail", "identity", "kube-system", "cert-manager", "platform", "all"}:
+                logger.warning(f"Refusing pod restart in protected namespace {namespace}")
+                return False
                 
             # Find pods with high restart counts
             pods = self.k8s_client.list_namespaced_pod(namespace=namespace)
@@ -565,7 +527,8 @@ class SelfHealingEngine:
         """Scale resources based on anomaly"""
         try:
             namespace = anomaly.affected_resource.split(':')[1]
-            if namespace == "all":
+            if namespace in {"mail", "identity", "kube-system", "cert-manager", "platform", "all"}:
+                logger.warning(f"Refusing scale in protected namespace {namespace}")
                 return False
                 
             # Find deployments to scale

@@ -16,254 +16,23 @@ data:
     monitoring:
       cycle_interval: 300
       decision_interval: 600
-      auto_healing: true
+      auto_healing: false
     security:
-      auto_rotation: true
+      auto_rotation: false
       compliance_monitoring: true
     scaling:
-      auto_scaling: true
-      max_replicas: 10
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: credential-manager
-  namespace: cronnecture-intelligence
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: credential-manager
-  template:
-    metadata:
-      labels:
-        app: credential-manager
-    spec:
-      serviceAccountName: cronnecture-intelligence
-      containers:
-      - name: credential-manager
-        image: python:3.11-slim
-        command: ["/bin/bash"]
-        args:
-          - -c
-          - |
-            pip install -r /app/requirements.txt
-            python /app/core/credential_manager.py
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
-        - name: data
-          mountPath: /var/lib/cronnecture
-        env:
-        - name: CRONNECTURE_MASTER_KEY
-          valueFrom:
-            secretKeyRef:
-              name: cronnecture-master-key
-              key: master-key
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
-      volumes:
-      - name: app-code
-        configMap:
-          name: intelligence-code
-      - name: data
-        persistentVolumeClaim:
-          claimName: intelligence-data
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: monitoring-system
-  namespace: cronnecture-intelligence
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: monitoring-system
-  template:
-    metadata:
-      labels:
-        app: monitoring-system
-    spec:
-      serviceAccountName: cronnecture-intelligence
-      containers:
-      - name: monitoring-system
-        image: python:3.11-slim
-        command: ["/bin/bash"]
-        args:
-          - -c
-          - |
-            pip install -r /app/requirements.txt
-            python /app/monitoring/intelligent_monitoring.py
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
-        - name: data
-          mountPath: /var/lib/cronnecture
-        resources:
-          requests:
-            cpu: 200m
-            memory: 512Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
-      volumes:
-      - name: app-code
-        configMap:
-          name: intelligence-code
-      - name: data
-        persistentVolumeClaim:
-          claimName: intelligence-data
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: cloudflare-manager
-  namespace: cronnecture-intelligence
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: cloudflare-manager
-  template:
-    metadata:
-      labels:
-        app: cloudflare-manager
-    spec:
-      serviceAccountName: cronnecture-intelligence
-      containers:
-      - name: cloudflare-manager
-        image: python:3.11-slim
-        command: ["/bin/bash"]
-        args:
-          - -c
-          - |
-            pip install -r /app/requirements.txt
-            python /app/integrations/cloudflare_manager.py monitor
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
-        env:
-        - name: CLOUDFLARE_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: cloudflare-credentials
-              key: api-token
-              optional: true
-        - name: CLOUDFLARE_ACCOUNT_ID
-          valueFrom:
-            secretKeyRef:
-              name: cloudflare-credentials
-              key: account-id
-              optional: true
-        - name: CLOUDFLARE_ZONE_ID
-          valueFrom:
-            secretKeyRef:
-              name: cloudflare-credentials
-              key: zone-id
-              optional: true
-        resources:
-          requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
-      volumes:
-      - name: app-code
-        configMap:
-          name: intelligence-code
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: master-orchestrator
-  namespace: cronnecture-intelligence
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: master-orchestrator
-  template:
-    metadata:
-      labels:
-        app: master-orchestrator
-    spec:
-      serviceAccountName: cronnecture-intelligence
-      containers:
-      - name: master-orchestrator
-        image: python:3.11-slim
-        command: ["/bin/bash"]
-        args:
-          - -c
-          - |
-            pip install -r /app/requirements.txt
-            python /app/master_orchestrator.py --daemon --config /etc/cronnecture/config.yaml
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
-        - name: config
-          mountPath: /etc/cronnecture
-        - name: data
-          mountPath: /var/lib/cronnecture
-        env:
-        - name: CRONNECTURE_MASTER_KEY
-          valueFrom:
-            secretKeyRef:
-              name: cronnecture-master-key
-              key: master-key
-        - name: CLOUDFLARE_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: cloudflare-credentials
-              key: api-token
-              optional: true
-        - name: CLOUDFLARE_ACCOUNT_ID
-          valueFrom:
-            secretKeyRef:
-              name: cloudflare-credentials
-              key: account-id
-              optional: true
-        - name: CLOUDFLARE_ZONE_ID
-          valueFrom:
-            secretKeyRef:
-              name: cloudflare-credentials
-              key: zone-id
-              optional: true
-        resources:
-          requests:
-            cpu: 250m
-            memory: 512Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
-      volumes:
-      - name: app-code
-        configMap:
-          name: intelligence-code
-      - name: config
-        configMap:
-          name: intelligence-config
-      - name: data
-        persistentVolumeClaim:
-          claimName: intelligence-data
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: intelligence-data
-  namespace: cronnecture-intelligence
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
+      auto_scaling: false
+      max_replicas: 1
+    protected_namespaces:
+      - mail
+      - identity
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - cert-manager
+      - platform
+      - cronnecture-system
+      - cronnecture-intelligence
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -277,14 +46,11 @@ metadata:
   name: cronnecture-intelligence
 rules:
 - apiGroups: [""]
-  resources: ["pods", "nodes", "namespaces", "secrets", "configmaps", "services", "persistentvolumeclaims"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  resources: ["pods", "nodes", "namespaces", "services"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["extensions"]
-  resources: ["deployments", "replicasets", "daemonsets"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["metrics.k8s.io"]
   resources: ["pods", "nodes"]
   verbs: ["get", "list"]
@@ -302,11 +68,251 @@ subjects:
   name: cronnecture-intelligence
   namespace: cronnecture-intelligence
 ---
-apiVersion: v1
-kind: Secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
 metadata:
-  name: cronnecture-master-key
+  name: cronnecture-intelligence
   namespace: cronnecture-intelligence
-type: Opaque
-data:
-  master-key: {{ printf "%s" (randAlphaNum 32 | b64enc) | b64enc }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cronnecture-intelligence
+  namespace: cronnecture-intelligence
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cronnecture-intelligence
+subjects:
+- kind: ServiceAccount
+  name: cronnecture-intelligence
+  namespace: cronnecture-intelligence
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: credential-manager
+  namespace: cronnecture-intelligence
+  labels:
+    app: credential-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: credential-manager
+  template:
+    metadata:
+      labels:
+        app: credential-manager
+    spec:
+      serviceAccountName: cronnecture-intelligence
+      nodeSelector:
+        kubernetes.io/hostname: cp-master-01
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: credential-manager
+        image: cronnecture-intelligence:local
+        imagePullPolicy: Never
+        command: ["python", "/app/core/credential_manager.py"]
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/cronnecture
+        env:
+        - name: CRONNECTURE_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cronnecture-master-key
+              key: master-key
+        - name: CREDENTIAL_NAMESPACE
+          value: cronnecture-intelligence
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring-system
+  namespace: cronnecture-intelligence
+  labels:
+    app: monitoring-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitoring-system
+  template:
+    metadata:
+      labels:
+        app: monitoring-system
+    spec:
+      serviceAccountName: cronnecture-intelligence
+      nodeSelector:
+        kubernetes.io/hostname: cp-master-01
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: monitoring-system
+        image: cronnecture-intelligence:local
+        imagePullPolicy: Never
+        command: ["python", "/app/monitoring/intelligent_monitoring.py"]
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/cronnecture
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflare-manager
+  namespace: cronnecture-intelligence
+  labels:
+    app: cloudflare-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflare-manager
+  template:
+    metadata:
+      labels:
+        app: cloudflare-manager
+    spec:
+      serviceAccountName: cronnecture-intelligence
+      nodeSelector:
+        kubernetes.io/hostname: cp-master-01
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: cloudflare-manager
+        image: cronnecture-intelligence:local
+        imagePullPolicy: Never
+        command: ["python", "/app/integrations/edge_status.py"]
+        env:
+        - name: CLOUDFLARE_ENABLED
+          value: "true"
+        - name: CLOUDFLARE_ACCOUNT_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: account_id
+              optional: true
+        - name: CLOUDFLARE_ZONE_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: zone_id
+              optional: true
+        - name: CLOUDFLARE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare
+              key: tunnel_token
+              optional: true
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: master-orchestrator
+  namespace: cronnecture-intelligence
+  labels:
+    app: master-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: master-orchestrator
+  template:
+    metadata:
+      labels:
+        app: master-orchestrator
+    spec:
+      serviceAccountName: cronnecture-intelligence
+      nodeSelector:
+        kubernetes.io/hostname: cp-master-01
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: master-orchestrator
+        image: cronnecture-intelligence:local
+        imagePullPolicy: Never
+        command:
+        - python
+        - /app/master_orchestrator.py
+        - --daemon
+        - --config
+        - /etc/cronnecture/config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/cronnecture
+        - name: data
+          mountPath: /var/lib/cronnecture
+        env:
+        - name: CRONNECTURE_MASTER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: cronnecture-master-key
+              key: master-key
+        - name: CREDENTIAL_NAMESPACE
+          value: cronnecture-intelligence
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+      volumes:
+      - name: config
+        configMap:
+          name: intelligence-config
+      - name: data
+        emptyDir: {}

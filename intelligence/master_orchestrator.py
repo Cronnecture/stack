@@ -119,7 +119,7 @@ class IntelligentDecisionEngine:
                 rationale=f"CPU usage at {state.cpu_usage_percent:.1f}% exceeds threshold of {self.decision_rules['scaling']['cpu_threshold_up']}%",
                 confidence=min(0.95, (state.cpu_usage_percent - 70) / 30),
                 expected_impact="Improve response times and prevent CPU bottlenecks",
-                auto_execute=state.cpu_usage_percent > 90
+                auto_execute=False
             )
             decisions.append(decision)
             
@@ -146,7 +146,7 @@ class IntelligentDecisionEngine:
                 rationale=f"Memory usage at {state.memory_usage_percent:.1f}% approaching capacity",
                 confidence=0.9,
                 expected_impact="Prevent OOM kills and improve application stability",
-                auto_execute=state.memory_usage_percent > 95
+                auto_execute=False
             )
             decisions.append(decision)
             
@@ -160,7 +160,7 @@ class IntelligentDecisionEngine:
                 rationale=f"Disk usage at {state.disk_usage_percent:.1f}% requires cleanup",
                 confidence=0.95,
                 expected_impact="Prevent disk space exhaustion and maintain system stability",
-                auto_execute=True
+                auto_execute=False
             )
             decisions.append(decision)
             
@@ -212,7 +212,7 @@ class AutonomousServiceManager:
     def __init__(self):
         self.service_registry = {}
         self.health_checks = {}
-        self.auto_healing_enabled = True
+        self.auto_healing_enabled = False
         
         # Initialize Kubernetes client
         try:
@@ -300,42 +300,16 @@ class AutonomousServiceManager:
             )
             
     async def auto_heal_service(self, service_name: str, health: ServiceHealth) -> bool:
-        """Autonomously heal unhealthy services"""
+        """Autonomously heal unhealthy services — disabled for mail/identity overlay."""
+        protected = {"mail", "identity", "kube-system", "cert-manager", "platform"}
+        service_info = self.service_registry.get(service_name)
+        namespace = (service_info or {}).get("namespace", "")
+        if namespace in protected:
+            logger.info(f"Refusing to heal protected namespace {namespace} ({service_name})")
+            return False
         if not self.auto_healing_enabled or health.status == "healthy":
             return True
-            
-        service_info = self.service_registry.get(service_name)
-        if not service_info or not service_info["auto_restart_enabled"]:
-            return False
-            
-        try:
-            if health.status in ["unhealthy", "degraded"]:
-                # Restart deployment
-                if self.apps_client:
-                    deployments = self.apps_client.list_namespaced_deployment(
-                        namespace=service_info["namespace"],
-                        label_selector=f"app={service_name}"
-                    )
-                    
-                    for deployment in deployments.items:
-                        # Trigger rolling restart by updating annotation
-                        deployment.spec.template.metadata.annotations = deployment.spec.template.metadata.annotations or {}
-                        deployment.spec.template.metadata.annotations["cronnecture.com/restart"] = datetime.now().isoformat()
-                        
-                        self.apps_client.patch_namespaced_deployment(
-                            name=deployment.metadata.name,
-                            namespace=service_info["namespace"],
-                            body=deployment
-                        )
-                        
-                        logger.info(f"Triggered auto-healing restart for service: {service_name}")
-                        
-                return True
-                
-        except Exception as e:
-            logger.error(f"Auto-healing failed for {service_name}: {e}")
-            return False
-            
+        logger.info(f"Auto-healing disabled; not mutating {service_name} ({health.status})")
         return False
 
 class ClientProvisioningEngine:
@@ -487,6 +461,9 @@ class MasterIntelligenceOrchestrator:
         self.monitoring_system = IntelligentMonitoringSystem()
         self.decision_engine = IntelligentDecisionEngine()
         self.service_manager = AutonomousServiceManager()
+        self.service_manager.auto_healing_enabled = bool(
+            self.config.get("monitoring", {}).get("auto_healing", False)
+        )
         self.provisioning_engine = ClientProvisioningEngine(self.credential_manager)
         
         # Initialize Cloudflare if configured
@@ -514,14 +491,14 @@ class MasterIntelligenceOrchestrator:
             "monitoring": {
                 "cycle_interval": 300,  # 5 minutes
                 "decision_interval": 600,  # 10 minutes
-                "auto_healing": True
+                "auto_healing": False
             },
             "security": {
-                "auto_rotation": True,
+                "auto_rotation": False,
                 "compliance_monitoring": True
             },
             "scaling": {
-                "auto_scaling": True,
+                "auto_scaling": False,
                 "max_replicas": 10
             }
         }
@@ -535,14 +512,16 @@ class MasterIntelligenceOrchestrator:
             except Exception as e:
                 logger.warning(f"Could not load config file: {e}")
                 
-        # Override with environment variables
-        if "CLOUDFLARE_API_TOKEN" in os.environ:
-            config.setdefault("cloudflare", {})["api_token"] = os.environ["CLOUDFLARE_API_TOKEN"]
-        if "CLOUDFLARE_ACCOUNT_ID" in os.environ:
-            config.setdefault("cloudflare", {})["account_id"] = os.environ["CLOUDFLARE_ACCOUNT_ID"]
-        if "CLOUDFLARE_ZONE_ID" in os.environ:
-            config.setdefault("cloudflare", {})["zone_id"] = os.environ["CLOUDFLARE_ZONE_ID"]
-            
+        # Cloudflare stays off unless explicitly enabled. Do not pick up
+        # CLOUDFLARE_* env vars by default — DNS/WAF mutation is out of scope.
+        if os.environ.get("CLOUDFLARE_ENABLED", "").lower() in ("1", "true", "yes"):
+            if "CLOUDFLARE_API_TOKEN" in os.environ:
+                config.setdefault("cloudflare", {})["api_token"] = os.environ["CLOUDFLARE_API_TOKEN"]
+            if "CLOUDFLARE_ACCOUNT_ID" in os.environ:
+                config.setdefault("cloudflare", {})["account_id"] = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+            if "CLOUDFLARE_ZONE_ID" in os.environ:
+                config.setdefault("cloudflare", {})["zone_id"] = os.environ["CLOUDFLARE_ZONE_ID"]
+
         return config
         
     def _init_database(self):
@@ -607,12 +586,14 @@ class MasterIntelligenceOrchestrator:
             for decision in decisions:
                 cycle_results["decisions_made"].append(asdict(decision))
                 
-                # Execute auto-approved decisions
-                if decision.auto_execute:
+                # Auto-execute is disabled for production overlay (mail/identity stay untouched).
+                if decision.auto_execute and self.config.get("scaling", {}).get("auto_scaling"):
                     success = await self._execute_decision(decision)
                     if success:
                         decision.executed = True
                         cycle_results["actions_executed"].append(decision.action)
+                elif decision.auto_execute:
+                    logger.info(f"Skipping auto-execute for {decision.action} (auto_scaling disabled)")
                         
                 # Store decision
                 self._store_decision(decision)
@@ -696,79 +677,46 @@ class MasterIntelligenceOrchestrator:
             )
             
     async def _execute_decision(self, decision: IntelligenceDecision) -> bool:
-        """Execute autonomous decision"""
-        logger.info(f"Executing decision: {decision.action}")
-        
+        """Execute autonomous decision. Scaling/healing of cluster workloads is disabled."""
+        logger.info(f"Evaluating decision: {decision.action}")
+
+        if decision.decision_type == "scaling" or "scale" in decision.action:
+            logger.warning(f"Refusing to execute scaling decision: {decision.action}")
+            return False
+
         try:
             if decision.action == "cleanup_disk_space":
-                # Execute disk cleanup
-                subprocess.run(["find", "/tmp", "-type", "f", "-mtime", "+7", "-delete"], 
+                subprocess.run(["find", "/tmp", "-type", "f", "-mtime", "+7", "-delete"],
                              capture_output=True, check=False)
                 return True
-                
-            elif decision.action == "scale_up_cpu_intensive_workloads":
-                # Scale up deployments (simplified)
-                return await self._scale_workloads(scale_up=True)
-                
-            elif decision.action == "scale_down_excess_capacity":
-                # Scale down deployments
-                return await self._scale_workloads(scale_up=False)
-                
+
             elif decision.action == "increase_memory_limits":
-                # Increase memory limits (simplified)
+                logger.info("Memory-limit changes are advisory only")
                 return True
-                
+
         except Exception as e:
             logger.error(f"Failed to execute decision {decision.action}: {e}")
             return False
-            
+
         return False
-        
+
     async def _scale_workloads(self, scale_up: bool) -> bool:
-        """Scale Kubernetes workloads"""
-        try:
-            apps_client = client.AppsV1Api()
-            deployments = apps_client.list_deployment_for_all_namespaces()
-            
-            for deployment in deployments.items:
-                # Skip system namespaces
-                if deployment.metadata.namespace.startswith("kube-"):
-                    continue
-                    
-                current_replicas = deployment.spec.replicas
-                
-                if scale_up:
-                    new_replicas = min(current_replicas + 1, 5)  # Max 5 replicas
-                else:
-                    new_replicas = max(current_replicas - 1, 1)  # Min 1 replica
-                    
-                if new_replicas != current_replicas:
-                    deployment.spec.replicas = new_replicas
-                    apps_client.patch_namespaced_deployment(
-                        name=deployment.metadata.name,
-                        namespace=deployment.metadata.namespace,
-                        body=deployment
-                    )
-                    
-                    action = "scaled up" if scale_up else "scaled down"
-                    logger.info(f"{action} {deployment.metadata.name} to {new_replicas} replicas")
-                    
-            return True
-            
-        except Exception as e:
-            logger.error(f"Scaling operation failed: {e}")
-            return False
-            
+        """Cluster-wide scaling is disabled to protect mail and identity."""
+        logger.warning("Refusing cluster-wide scale operation")
+        return False
+
     async def _run_service_management(self):
         """Run autonomous service management"""
-        # Register core services
         await self.service_manager.register_service("stalwart-mail", "mail")
         await self.service_manager.register_service("vaultwarden", "identity")
-        
-        # Check and heal services
+
         for service_name in self.service_manager.service_registry:
             health = await self.service_manager.check_service_health(service_name)
-            await self.service_manager.auto_heal_service(service_name, health)
+            logger.info(f"Service {service_name} health: {health.status}")
+            if self.service_manager.auto_healing_enabled:
+                await self.service_manager.auto_heal_service(service_name, health)
+            else:
+                logger.info(f"Auto-heal disabled; not mutating {service_name}")
             
     def _store_decision(self, decision: IntelligenceDecision):
         """Store decision in database"""

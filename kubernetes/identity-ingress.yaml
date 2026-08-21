@@ -1,0 +1,91 @@
+# HTTP for identity apps goes through Traefik. Cloudflare node-tunnel
+# originates at the Traefik ClusterIP. Do not expose these as NodePorts.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vaultwarden
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`vault.cronnecture.com`)
+      kind: Rule
+      services:
+        - name: vaultwarden
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: passbolt
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`passbolt.cronnecture.com`)
+      kind: Rule
+      services:
+        - name: passbolt
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: authentik
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`auth.cronnecture.com`)
+      kind: Rule
+      services:
+        - name: authentik
+          port: 9000
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: logto
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`id.cronnecture.com`)
+      kind: Rule
+      services:
+        - name: logto
+          port: 3001
+    - match: Host(`id-admin.cronnecture.com`)
+      kind: Rule
+      services:
+        - name: logto
+          port: 3002
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: hanko
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`passkeys.cronnecture.com`)
+      kind: Rule
+      services:
+        - name: hanko
+          port: 8000

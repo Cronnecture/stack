@@ -1,0 +1,1274 @@
+# Live identity stack (Vaultwarden, Authentik, Logto, Passbolt, Hanko).
+# Secret identity-secrets stays in-cluster only and is never written from git.
+# PVCs are never deleted.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: identity
+  labels:
+    cronnecture.io/role: identity
+    pod-security.kubernetes.io/enforce: baseline
+    cronnecture.com/managed-by: stack
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: identity-postgres-init
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+data:
+  00-init.sql: 'CREATE USER identity WITH PASSWORD ''H1BcGgB0HetZtltUW040cFmLtefdKbxe''
+    CREATEDB CREATEROLE;
+
+    CREATE DATABASE vaultwarden OWNER identity;
+
+    CREATE DATABASE authentik OWNER identity;
+
+    CREATE DATABASE logto OWNER identity;
+
+    CREATE DATABASE hanko OWNER identity;
+
+    GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO identity;
+
+    GRANT ALL PRIVILEGES ON DATABASE authentik TO identity;
+
+    GRANT ALL PRIVILEGES ON DATABASE logto TO identity;
+
+    GRANT ALL PRIVILEGES ON DATABASE hanko TO identity;
+
+    '
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: identity-postgres
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: identity-redis
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: identity-postgres
+  namespace: identity
+  labels:
+    app: identity-postgres
+    cronnecture.com/managed-by: stack
+spec:
+  serviceName: identity-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-postgres
+  template:
+    metadata:
+      labels:
+        app: identity-postgres
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - name: pg
+          containerPort: 5432
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-password
+        - name: POSTGRES_USER
+          value: postgres
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        - name: init
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: identity-postgres
+      - name: init
+        configMap:
+          name: identity-postgres-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-postgres
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  selector:
+    app: identity-postgres
+  ports:
+  - name: pg
+    port: 5432
+    targetPort: pg
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-redis
+  namespace: identity
+  labels:
+    app: identity-redis
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-redis
+  template:
+    metadata:
+      labels:
+        app: identity-redis
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command:
+        - sh
+        - -c
+        args:
+        - exec redis-server --requirepass "$REDIS_PASSWORD" --appendonly yes
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: redis-password
+        ports:
+        - name: redis
+          containerPort: 6379
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: identity-redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-redis
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  selector:
+    app: identity-redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden-data
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+  namespace: identity
+  labels:
+    app: vaultwarden
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vaultwarden
+  template:
+    metadata:
+      labels:
+        app: vaultwarden
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: vaultwarden
+        image: vaultwarden/server:1.37.1-alpine
+        ports:
+        - name: http
+          containerPort: 80
+        env:
+        - name: DOMAIN
+          value: https://vault.cronnecture.com
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-dsn-vaultwarden
+        - name: ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: vaultwarden-admin-token
+        - name: SIGNUPS_ALLOWED
+          value: 'false'
+        - name: INVITATIONS_ALLOWED
+          value: 'true'
+        - name: WEBSOCKET_ENABLED
+          value: 'true'
+        - name: SHOW_PASSWORD_HINT
+          value: 'false'
+        - name: IP_HEADER
+          value: CF-Connecting-IP
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        readinessProbe:
+          httpGet:
+            path: /alive
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /alive
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: vaultwarden-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  type: ClusterIP
+  selector:
+    app: vaultwarden
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-server
+  namespace: identity
+  labels:
+    app: authentik-server
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-server
+  template:
+    metadata:
+      labels:
+        app: authentik-server
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      volumes:
+      - name: authentik-email-ca
+        configMap:
+          name: authentik-email-ca
+      containers:
+      - name: server
+        image: ghcr.io/goauthentik/server:2026.5.6
+        args:
+        - server
+        ports:
+        - name: http
+          containerPort: 9000
+        - name: https
+          containerPort: 9443
+        volumeMounts:
+        - name: authentik-email-ca
+          mountPath: /etc/ssl/authentik
+          readOnly: true
+        env:
+        - name: SSL_CERT_FILE
+          value: /etc/ssl/authentik/ca-bundle.crt
+        - name: AUTHENTIK_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-secret-key
+        - name: AUTHENTIK_BOOTSTRAP_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-bootstrap-email
+        - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-bootstrap-password
+        - name: AUTHENTIK_ERROR_REPORTING__ENABLED
+          value: 'false'
+        - name: AUTHENTIK_EMAIL__HOST
+          value: stalwart.mail.svc.cluster.local
+        - name: AUTHENTIK_EMAIL__PORT
+          value: '587'
+        - name: AUTHENTIK_EMAIL__USERNAME
+          value: noreply@cronnecture.com
+        - name: AUTHENTIK_EMAIL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-email-password
+        - name: AUTHENTIK_EMAIL__USE_TLS
+          value: 'false'
+        - name: AUTHENTIK_EMAIL__FROM
+          value: Cronnecture Auth <noreply@cronnecture.com>
+        - name: AUTHENTIK_POSTGRESQL__HOST
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-host
+        - name: AUTHENTIK_POSTGRESQL__PORT
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-port
+        - name: AUTHENTIK_POSTGRESQL__USER
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-user
+        - name: AUTHENTIK_POSTGRESQL__NAME
+          value: authentik
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-password
+        - name: AUTHENTIK_POSTGRESQL__SSLMODE
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-sslmode
+        - name: AUTHENTIK_REDIS__HOST
+          value: identity-redis
+        - name: AUTHENTIK_REDIS__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: redis-password
+        readinessProbe:
+          httpGet:
+            path: /-/health/ready/
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        livenessProbe:
+          httpGet:
+            path: /-/health/live/
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1536Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-worker
+  namespace: identity
+  labels:
+    app: authentik-worker
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentik-worker
+  template:
+    metadata:
+      labels:
+        app: authentik-worker
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      volumes:
+      - name: authentik-email-ca
+        configMap:
+          name: authentik-email-ca
+      containers:
+      - name: worker
+        image: ghcr.io/goauthentik/server:2026.5.6
+        args:
+        - worker
+        volumeMounts:
+        - name: authentik-email-ca
+          mountPath: /etc/ssl/authentik
+          readOnly: true
+        env:
+        - name: SSL_CERT_FILE
+          value: /etc/ssl/authentik/ca-bundle.crt
+        - name: AUTHENTIK_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-secret-key
+        - name: AUTHENTIK_ERROR_REPORTING__ENABLED
+          value: 'false'
+        - name: AUTHENTIK_EMAIL__HOST
+          value: stalwart.mail.svc.cluster.local
+        - name: AUTHENTIK_EMAIL__PORT
+          value: '587'
+        - name: AUTHENTIK_EMAIL__USERNAME
+          value: noreply@cronnecture.com
+        - name: AUTHENTIK_EMAIL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-email-password
+        - name: AUTHENTIK_EMAIL__USE_TLS
+          value: 'false'
+        - name: AUTHENTIK_EMAIL__FROM
+          value: Cronnecture Auth <noreply@cronnecture.com>
+        - name: AUTHENTIK_POSTGRESQL__HOST
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-host
+        - name: AUTHENTIK_POSTGRESQL__PORT
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-port
+        - name: AUTHENTIK_POSTGRESQL__USER
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-user
+        - name: AUTHENTIK_POSTGRESQL__NAME
+          value: authentik
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-password
+        - name: AUTHENTIK_POSTGRESQL__SSLMODE
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-sslmode
+        - name: AUTHENTIK_REDIS__HOST
+          value: identity-redis
+        - name: AUTHENTIK_REDIS__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: redis-password
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  type: ClusterIP
+  selector:
+    app: authentik-server
+  ports:
+  - name: http
+    port: 9000
+    targetPort: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: passbolt-mariadb
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: passbolt-data
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: passbolt-jwt
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: passbolt-config
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+data:
+  passbolt.php: "<?php\nreturn [\n    'passbolt' => [\n        'gpg' => [\n      \
+    \      'serverKey' => [\n                'fingerprint' => '3BCEF49D6F5D68F55BC12250961977AB56CC44CA',\n\
+    \                'public' => CONFIG . DS . 'gpg' . DS . 'serverkey.asc',\n   \
+    \             'private' => CONFIG . DS . 'gpg' . DS . 'serverkey_private.asc',\n\
+    \            ],\n        ],\n        'registration' => [\n            'public'\
+    \ => false,\n        ],\n        'ssl' => [\n            'force' => false,\n \
+    \       ],\n    ],\n];\n"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: passbolt-db
+  namespace: identity
+  labels:
+    app: passbolt-db
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: passbolt-db
+  template:
+    metadata:
+      labels:
+        app: passbolt-db
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: mariadb
+        image: mariadb:11.4
+        ports:
+        - name: mysql
+          containerPort: 3306
+        env:
+        - name: MYSQL_DATABASE
+          value: passbolt
+        - name: MYSQL_USER
+          value: passbolt
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: passbolt-db-password
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: passbolt-db-root-password
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+        readinessProbe:
+          exec:
+            command:
+            - healthcheck.sh
+            - --connect
+            - --innodb_initialized
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: passbolt-mariadb
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: passbolt-db
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  selector:
+    app: passbolt-db
+  ports:
+  - name: mysql
+    port: 3306
+    targetPort: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: passbolt
+  namespace: identity
+  labels:
+    app: passbolt
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: passbolt
+  template:
+    metadata:
+      labels:
+        app: passbolt
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: passbolt
+        image: passbolt/passbolt:4.12.0-1-ce
+        ports:
+        - name: http
+          containerPort: 80
+        - name: https
+          containerPort: 443
+        env:
+        - name: APP_FULL_BASE_URL
+          value: https://passbolt.cronnecture.com
+        - name: DATASOURCES_DEFAULT_HOST
+          value: passbolt-db
+        - name: DATASOURCES_DEFAULT_USERNAME
+          value: passbolt
+        - name: DATASOURCES_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: passbolt-db-password
+        - name: DATASOURCES_DEFAULT_DATABASE
+          value: passbolt
+        - name: DATASOURCES_DEFAULT_PORT
+          value: '3306'
+        - name: PASSBOLT_REGISTRATION_PUBLIC
+          value: 'false'
+        - name: PASSBOLT_SSL_FORCE
+          value: 'false'
+        - name: PASSBOLT_GPG_SERVER_KEY_FINGERPRINT
+          value: 3BCEF49D6F5D68F55BC12250961977AB56CC44CA
+        - name: EMAIL_TRANSPORT_DEFAULT_HOST
+          value: stalwart.mail.svc.cluster.local
+        - name: EMAIL_TRANSPORT_DEFAULT_PORT
+          value: '587'
+        - name: EMAIL_TRANSPORT_DEFAULT_TIMEOUT
+          value: '30'
+        - name: EMAIL_TRANSPORT_DEFAULT_USERNAME
+          value: noreply@cronnecture.com
+        - name: EMAIL_TRANSPORT_DEFAULT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-email-password
+        - name: EMAIL_TRANSPORT_DEFAULT_TLS
+          value: 'false'
+        - name: EMAIL_DEFAULT_FROM
+          value: noreply@cronnecture.com
+        - name: EMAIL_DEFAULT_FROM_NAME
+          value: Cronnecture Passbolt
+        - name: EMAIL_DEFAULT_TRANSPORT
+          value: Smtp
+        volumeMounts:
+        - name: data
+          mountPath: /etc/passbolt/gpg
+        - name: jwt
+          mountPath: /etc/passbolt/jwt
+        - name: passbolt-config
+          mountPath: /etc/passbolt/passbolt.php
+          subPath: passbolt.php
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /healthcheck/status.json
+            port: http
+          initialDelaySeconds: 40
+          periodSeconds: 20
+          failureThreshold: 12
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: passbolt-data
+      - name: jwt
+        persistentVolumeClaim:
+          claimName: passbolt-jwt
+      - name: passbolt-config
+        configMap:
+          name: passbolt-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: passbolt
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  type: ClusterIP
+  selector:
+    app: passbolt
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logto
+  namespace: identity
+  labels:
+    app: logto
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logto
+  template:
+    metadata:
+      labels:
+        app: logto
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: logto
+        image: ghcr.io/logto-io/logto:latest
+        command:
+        - sh
+        - -c
+        args:
+        - 'set -e
+
+          # Matches upstream docker-compose entrypoint.
+
+          npm run cli db seed -- --swe
+
+          npm start
+
+          '
+        ports:
+        - name: core
+          containerPort: 3001
+        - name: admin
+          containerPort: 3002
+        env:
+        - name: TRUST_PROXY_HEADER
+          value: '1'
+        - name: DB_URL
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: postgres-dsn-logto
+        - name: ENDPOINT
+          value: https://id.cronnecture.com
+        - name: ADMIN_ENDPOINT
+          value: https://id-admin.cronnecture.com
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=768
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: core
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 18
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: core
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logto
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  type: ClusterIP
+  selector:
+    app: logto
+  ports:
+  - name: core
+    port: 3001
+    targetPort: core
+  - name: admin
+    port: 3002
+    targetPort: admin
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hanko-config
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+data:
+  config.yaml: "database:\n  # url wins over discrete fields; sslmode must be in the\
+    \ DSN (ssl_mode is not a Hanko key).\n  # Password/host come from the rendered\
+    \ DSN (Supabase or in-cluster).\n  url: 'postgres://identity:H1BcGgB0HetZtltUW040cFmLtefdKbxe@identity-postgres:5432/hanko?sslmode=disable'\n\
+    \  dialect: postgres\nserver:\n  public:\n    address: \"0.0.0.0:8000\"\n    cors:\n\
+    \      allow_origins:\n        - \"https://cronnecture.com\"\n        - \"https://*.cronnecture.com\"\
+    \n        - \"https://client.cronnecture.com\"\n        - \"https://ops.cronnecture.com\"\
+    \n  admin:\n    address: \"0.0.0.0:8001\"\nsession:\n  lifespan: 24h\n  cookie:\n\
+    \    domain: \"cronnecture.com\"\n    http_only: true\n    secure: true\n    same_site:\
+    \ lax\npasskey:\n  enabled: true\npassword:\n  enabled: true\n  min_password_length:\
+    \ 10\nwebauthn:\n  relying_party:\n    id: \"cronnecture.com\"\n    display_name:\
+    \ Cronnecture\n    origins:\n      - \"https://passkeys.cronnecture.com\"\n  \
+    \    - \"https://client.cronnecture.com\"\n      - \"https://ops.cronnecture.com\"\
+    \nsecrets:\n  keys:\n    - Sr2ikuys1nuGsAt19FDpJXVl8DMmYUTkvroNSFGu7TU94UC83aThv6NgF11BILbr\n\
+    \  cookie:\n    - P7yVLhgt2fO1yUGCTU57lmDgtpkobB1F\n"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hanko
+  namespace: identity
+  labels:
+    app: hanko
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hanko
+  template:
+    metadata:
+      labels:
+        app: hanko
+    spec:
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      initContainers:
+      - name: migrate
+        image: ghcr.io/teamhanko/hanko:v2.7.0
+        args:
+        - migrate
+        - up
+        - --config
+        - /etc/config/config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+      containers:
+      - name: hanko
+        image: ghcr.io/teamhanko/hanko:v2.7.0
+        args:
+        - serve
+        - public
+        - --config
+        - /etc/config/config.yaml
+        ports:
+        - name: http
+          containerPort: 8000
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health/alive
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: config
+        configMap:
+          name: hanko-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hanko
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  type: ClusterIP
+  selector:
+    app: hanko
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-default
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - {}
+  egress:
+  - {}
+
+# logto-postgres was live beside the addon; now owned by this stack
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    pv.kubernetes.io/bind-completed: 'yes'
+    pv.kubernetes.io/bound-by-controller: 'yes'
+    volume.beta.kubernetes.io/storage-provisioner: rancher.io/local-path
+    volume.kubernetes.io/selected-node: worker-general-01
+    volume.kubernetes.io/storage-provisioner: rancher.io/local-path
+  finalizers:
+  - kubernetes.io/pvc-protection
+  name: logto-postgres
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+  volumeMode: Filesystem
+  volumeName: pvc-e31a7a78-f5b9-4847-90e0-63fd515b6fcb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: logto-postgres
+    cronnecture.com/managed-by: stack
+  name: logto-postgres
+  namespace: identity
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: logto-postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: logto-postgres
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+            weight: 100
+      containers:
+      - env:
+        - name: POSTGRES_PASSWORD
+          value: H1BcGgB0HetZtltUW040cFmLtefdKbxe
+        - name: POSTGRES_USER
+          value: postgres
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:16-alpine
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: pg
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: data
+        - mountPath: /docker-entrypoint-initdb.d
+          name: init
+          readOnly: true
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        pool: general
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: logto-postgres
+      - configMap:
+          defaultMode: 420
+          name: logto-postgres-init
+        name: init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logto-postgres
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  ports:
+  - name: pg
+    port: 5432
+    protocol: TCP
+    targetPort: pg
+  selector:
+    app: logto-postgres
+  type: ClusterIP
