@@ -90,7 +90,7 @@ def main() -> None:
     dump_docs(
         OUT / "identity.yaml",
         identity,
-        "# Live identity stack (Vaultwarden, Authentik, Logto, Passbolt, Hanko).\n"
+        "# Live identity stack (Vaultwarden, Authentik, Passbolt, Cerbos).\n"
         "# Secret identity-secrets stays in-cluster only and is never written from git.\n"
         "# PVCs are never deleted.\n",
     )

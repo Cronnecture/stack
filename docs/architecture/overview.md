@@ -2,7 +2,7 @@
 
 How the Cronnecture fleet is designed, how traffic flows, and how components interact.
 
-Current as of **24 August 2026**. Live cluster: k3s `v1.35.4+k3s1`, 1 server + 2 general workers.
+Current as of **26 August 2026**. Live cluster: k3s `v1.35.4+k3s1`, 1 server + 2 general workers.
 
 ## Design goals
 
@@ -73,7 +73,7 @@ Runs k3s **server** (API + etcd). Platform addon: `ansible/roles/control_plane/t
 
 | Workload | Replicas | Notes |
 |----------|----------|-------|
-| `dashboard` | 1 | Next.js control portal at **https://control.cronnecture.com**. Pinned to `cp-master-01`. Source: github.com/Cronnecture/cronnecture-control-portal |
+| `dashboard` | 2 | Next.js control portal at **https://control.cronnecture.com**. Pinned to `cp-master-01`. Source: github.com/Cronnecture/cronnecture-control-portal |
 | `agent-core` | 1 | Fleet/cluster catalog API on `/api` of the same host. `GET /api/fleet/shell` + sliced ListResult reads; `POST /api/jobs` `{type,target,payload}` |
 
 `ops.cronnecture.com` and `stack.cronnecture.com` **redirect the UI** here. Product APIs, webmail, webhooks, status, and the customer portal stay on `platform`.
@@ -82,8 +82,8 @@ Runs k3s **server** (API + etcd). Platform addon: `ansible/roles/control_plane/t
 
 | Workload | Replicas | Notes |
 |----------|----------|-------|
-| `api-edge` + JS APIs | 1 each | Catalog in `ansible/config/policies/api-catalog.yml`. Service **`control-plane` is ClusterIP → `api-edge`**. `api-data` is the only JS process with a DB URL. See [platform-api.md](platform-api.md) |
-| `control-plane` | 2 | FastAPI leftover APIs + customer-portal middleware (ClusterIP `control-plane-legacy`); Supabase DB; memory limit **`10Gi`** (request `256Mi`) |
+| `api-edge` + JS APIs | catalog | Catalog in `ansible/config/policies/api-catalog.yml`. Service **`control-plane` is ClusterIP → `api-edge`** (2 replicas). `api-data` is the only JS process with a DB URL. See [platform-api.md](platform-api.md) |
+| `control-plane` | 3 | FastAPI leftover APIs + customer-portal middleware (ClusterIP `control-plane-legacy`); Supabase DB; memory limit **`10Gi`** (request `256Mi`) |
 | `fleet-registry` | 1 | On `pool=general` (`worker-general-01`). NodePort **30500**. **R2** (`REGISTRY_STORAGE=s3`, bucket `cronnecture-fleet-registry`) |
 | `cronnecture-website` | 1 | Marketing: `cronnecture.com` / `www` (EN), `cronnecture.nl` / `www` (NL) via Traefik. On `pool=general` |
 | `maintenance-page` | 1 | Fallback origin for edge maintenance / billing hold |

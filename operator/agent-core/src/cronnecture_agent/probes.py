@@ -13,7 +13,6 @@ HTTP_PROBES = [
     {"name": "Webmail", "url": "https://webmail.cronnecture.com/", "ns": "platform", "ok": {200, 302}},
     {"name": "Ops", "url": "https://ops.cronnecture.com/", "ns": "platform", "ok": {200, 301, 302}},
     {"name": "Authentik", "url": "https://auth.cronnecture.com/", "ns": "identity", "ok": {200, 302}},
-    {"name": "Logto", "url": "https://id.cronnecture.com/", "ns": "identity", "ok": {200, 302}},
     {"name": "Passbolt", "url": "https://passbolt.cronnecture.com/", "ns": "identity", "ok": {200, 302}},
     {"name": "Website", "url": "https://cronnecture.com/", "ns": "platform", "ok": {200, 301, 302}},
     {"name": "Control", "url": "http://dashboard.cronnecture-system.svc.cluster.local/", "ns": "cronnecture-system", "ok": {200}},

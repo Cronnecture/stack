@@ -31,7 +31,7 @@ Internet
                                identity ns ClusterIP + Cerbos
 
 Databases:
-  Authentik / Hanko → in-cluster identity-postgres
+  Authentik → in-cluster identity-postgres
   Vaultwarden → Supabase project cronnecture-identity (session pooler :5432)
   Passbolt → on-cluster MariaDB (CE is MySQL-only)
   Authentik Redis → on-cluster identity-redis
@@ -51,7 +51,7 @@ MFA: Authentik TOTP for ops and product.
 | **Authentik** | `https://auth.cronnecture.com` | Public | Admin/ops edge IdP **and** customer-portal OIDC (**2026.8.0**). **1 replica** on in-cluster `identity-postgres`. |
 | **Logto** | — | **Retired 2026-08-26** | Cluster objects deleted. Cookie `cp_logto_session` and `logto_oidc.py` remain as names. |
 | **Logto Admin** | `https://id-admin.cronnecture.com` | leftover DNS | Do not treat as live product SSO. |
-| **Hanko** | — | **Retired 2026-08-26** | Unwired leftover; cluster objects deleted. DB `hanko` may remain on identity-postgres. |
+| **Hanko** | — | **Retired 2026-08-26** | Cluster objects deleted. Orphan DB `hanko` may remain on identity-postgres until a PVC rebuild. |
 | **Cerbos** | `identity/cerbos:3592` | ClusterIP | Fine-grained AuthZ (ops policies shipped). **2 replicas**, required anti-affinity. |
 
 Logto and Hanko are retired. Cerbos runs **2 replicas**. Authentik stays **1 replica**. Operator failsafe: [RB-16](../runbooks/identity-failsafe.md).
@@ -92,7 +92,7 @@ Details: [backup.md](backup.md#off-box-break-glass-pack). Vault password (`~/.an
 | Passbolt | On-cluster MariaDB | CE is MySQL/MariaDB only — not Postgres |
 | Redis | On-cluster `identity-redis` | Not Supabase |
 
-Vault keys: `vault_identity_database_host/user/password/port/sslmode` (+ `vault_identity_supabase_project_ref`) for Vaultwarden. Authentik/Hanko use in-cluster `identity-postgres`.
+Vault keys: `vault_identity_database_host/user/password/port/sslmode` (+ `vault_identity_supabase_project_ref`) for Vaultwarden. Authentik uses in-cluster `identity-postgres`.
 
 ### Identity data protection (current vs later)
 
@@ -101,7 +101,8 @@ Vault keys: `vault_identity_database_host/user/password/port/sslmode` (+ `vault_
 | Fleet → R2 | Passbolt MariaDB dump (`identity/passbolt.sql.gz`) + emergency bundle | **Now** — `backup-fleet.sh` |
 | Break-glass | Vault pass, vault.yml, SSH key, R2 env, inventory → R2 + worker | **Now** — `make break-glass` |
 | Supabase `cronnecture-identity` | Vaultwarden only | **No fleet `pg_dump`**. Provider **daily backups** only if the project is on a paid plan. **PITR deferred**. |
-| Authentik / Hanko | In-cluster `identity-postgres` PVC | **No fleet pg_dump today** — add this before relying on restore |
+| Authentik | In-cluster `identity-postgres` PVC | **Required** `pg_dump authentik` in `backup-fleet.sh` when the STS has replicas |
+| Hanko | Orphan DB on identity-postgres | Retired 2026-08-26; dump is best-effort if the DB still exists |
 | Logto | Retired | — |
 
 Accepted for current scale: survive without identity PITR. When adding VPS / HA (5–7 nodes), enable PITR (or equivalent) on `cronnecture-identity` in the same step — [backup.md](backup.md), [roadmap.md](../architecture/roadmap.md).
@@ -121,7 +122,7 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 | Vaultwarden | Supabase DB; signups off; **`skip_access`**; prelogin/password **200** |
 | Passbolt | Access → Authentik; **browser extension + recovery kit still required** |
 | Logto | **Retired 2026-08-26** | Cluster objects gone; names linger in code |
-| Hanko | Deployed, **not wired** to the customer portal; RP id `cronnecture.com` |
+| Hanko | **Retired 2026-08-26** | Cluster objects deleted; do not send customers to `passkeys.cronnecture.com` |
 | Cerbos | Healthy; CP mounts `CERBOS_URL`/`CERBOS_ENABLED=1` (ops API mirror; fail-closed on destructive; OPS_API_TOKEN + superadmin skip) |
 | SSH Access | `type=ssh` + SSH CA; Authentik MFA only |
 | Ops password login | Off by default — Access email bridges ([operator-access.md](operator-access.md)) |
@@ -177,25 +178,11 @@ Native Bitwarden clients cannot complete Cloudflare Access challenges → **`ski
 
 **Later (with HA / more VPS — not urgent):** enable Supabase **PITR** on `cronnecture-identity` (or equivalent continuous recovery) when scaling per [RB-10](../runbooks/scale-to-ha.md). Do **not** enable paid PITR until that budget step.
 
-### Google OIDC → Logto (wired)
+### Google OIDC / Logto CIAM (retired 2026-08-26)
 
-**Cost:** Standard [Sign in with Google](https://developers.google.com/identity/sign-in/web/sign-in) / OAuth for consumer Google accounts is **free** — Google does **not** charge per login.
+Logto is gone. Do **not** point Google OAuth or new client apps at `id.cronnecture.com`. Product SSO is Authentik at `auth.cronnecture.com`. The control-plane bridge is still named `/api/auth/logto/login` → `/api/auth/oidc/callback` with cookie `cp_logto_session` — do not rename those without the freeze list.
 
-**Status:** Connector `google` (`google-universal`) is the only social on the default tenant sign-in experience. Secrets in `vault_logto_google_client_id` / `vault_logto_google_client_secret` (fallback `config/.identity/logto_google_oauth.env`).
-
-**Google Cloud Console (confirm / fix):**
-1. Authorized JavaScript origins: `https://id.cronnecture.com`  
-2. Authorized redirect URIs: **`https://id.cronnecture.com/callback/google`**  
-3. **Do not rotate** the Google client secret unless an operator explicitly requests it (rotation is deferred). If rotation is later approved, update vault + `.identity/logto_google_oauth.env` + Logto connector config — never commit the secret.
-
-Scaffold reference: [logto-google-connector.json](examples/logto-google-connector.json).
-
-### Customer portal / Logto CIAM
-
-- **Edge (existing clients):** Cloudflare Access on `client.*/client/portal/*` stays **Authentik-only** allowlists (unchanged for autoklaver etc.).  
-- **Product SSO (wired):** Logto Traditional app **Cronnecture customer portal** at `https://id.cronnecture.com`; CP env `LOGTO_ENDPOINT` / `LOGTO_APP_ID` / `LOGTO_APP_SECRET` from vault (`vault_logto_*`; fallback `config/.identity/logto_portal_app_*`).  
-- **Bridge:** `GET /api/auth/logto/login` → Logto → `GET /api/auth/logto/callback` → `cp_logto_session` cookie; portal APIs accept Access email **or** Logto session email (allowlist still enforced). Portal UI **Sign in** when Logto is configured.  
-- **Future client apps:** use Logto SDK against `https://id.cronnecture.com` with a dedicated Application (or reuse this Traditional app’s redirect URIs). Short guide: [client-portal.md](../platform/client-portal.md#logto-product-sso).  
+Customer hub: `client.cronnecture.com` (Access off, invite-only). Site-gate for NoordDrive is oauth2-proxy (`site-logto`) → Authentik; cookie `_site_logto`.  
 
 ## Ops notes
 

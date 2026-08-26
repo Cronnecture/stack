@@ -1,5 +1,5 @@
-# Live identity stack (Vaultwarden, Authentik, Passbolt, Hanko).
-# Logto cluster objects were deleted 2026-08-26 (cut over to Authentik).
+# Live identity stack (Vaultwarden, Authentik, Passbolt, Cerbos).
+# Logto and Hanko cluster objects were deleted 2026-08-26 (cut over to Authentik).
 # Secret identity-secrets stays in-cluster only and is never written from git.
 # PVCs are never deleted.
 
@@ -61,13 +61,9 @@ data:
 
     CREATE DATABASE authentik OWNER identity;
 
-    CREATE DATABASE hanko OWNER identity;
-
     GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO identity;
 
     GRANT ALL PRIVILEGES ON DATABASE authentik TO identity;
-
-    GRANT ALL PRIVILEGES ON DATABASE hanko TO identity;
 
     '
 ---
@@ -1024,9 +1020,10 @@ metadata:
   namespace: identity
   labels:
     cronnecture.com/managed-by: stack
-# Ingress from Traefik, platform/operator, monitoring, previews, and
-# namespaces labeled client=* (site-gate). Egress stays open so Vaultwarden
-# can reach Supabase and Authentik can reach Stalwart SMTP.
+# Ingress from Traefik, platform/operator, and monitoring to every identity
+# pod. Client and previews namespaces are NOT in this list — they only reach
+# Authentik via identity-from-clients. Egress stays open so Vaultwarden can
+# reach Supabase and Authentik can reach Stalwart SMTP.
 spec:
   podSelector: {}
   policyTypes:
@@ -1049,6 +1046,28 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: monitoring
+  egress:
+  - {}
+---
+# Site-gate / oauth2-proxy in client=* and previews may talk to Authentik
+# in-cluster. They must not reach Vaultwarden, Passbolt, or identity-postgres.
+# NoordDrive's live oauth2-proxy uses public auth.cronnecture.com (Traefik);
+# this rule is the in-cluster path.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-from-clients
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  podSelector:
+    matchLabels:
+      app: authentik-server
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: previews
@@ -1056,8 +1075,6 @@ spec:
         matchExpressions:
         - key: client
           operator: Exists
-  egress:
-  - {}
 
 # Authentik is on in-cluster identity-postgres (migrated off Supabase so
 # gunicorn can scale without pool_size 15). Vaultwarden remains on the
@@ -1065,7 +1082,6 @@ spec:
 # scripts/sync-identity-db-secrets.py pins secrets to whatever the live
 # pods actually use — do not point Vaultwarden at an empty local DB.
 ---
-# Hanko cluster objects were removed 2026-08-26 (unwired leftover).
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

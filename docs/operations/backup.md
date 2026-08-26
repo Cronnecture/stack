@@ -84,7 +84,7 @@ Ops UI: **Platform → Automations → Fleet backups → Cloudflare R2**.
 | Project | Workloads | Backups |
 |---------|-----------|---------|
 | Control plane (`vault_platform_database_url`) | Ops / clients registry | Prefer provider daily backups (paid plans). PITR when budget allows |
-| **`cronnecture-identity`** (`vault_identity_database_*`) | Authentik / Hanko / Vaultwarden | **PITR deferred** until HA / more VPS budget (~€100/mo — not urgent). Free tier has **no** automatic daily backups; Pro+ includes rolling daily backups if the project is upgraded. No fleet `pg_dump` for these DBs today |
+| **`cronnecture-identity`** (`vault_identity_database_*`) | Vaultwarden | **PITR deferred** until HA / more VPS budget (~€100/mo — not urgent). Free tier has **no** automatic daily backups; Pro+ includes rolling daily backups if the project is upgraded. Authentik is **not** on this project (in-cluster `identity-postgres`, dumped by `backup-fleet.sh`). |
 
 - Control-plane schema: `services/control-plane/schema.sql`
 - Re-register clients in the ops UI if DB is empty but cluster remains.
@@ -108,7 +108,7 @@ See [supabase.md](supabase.md) and [identity.md](identity.md). When scaling VPS/
 | Artifact | Source |
 |----------|--------|
 | `identity/passbolt.sql.gz` | Passbolt MariaDB (always on-cluster; `mariadb-dump`) |
-| `identity/SUPABASE.txt` | Marker when Postgres is external (Authentik/Hanko/Vaultwarden on `cronnecture-identity`; PITR deferred) |
+| `identity/SUPABASE.txt` | Marker when Postgres is external (Vaultwarden on `cronnecture-identity`; PITR deferred) |
 | `identity/*.sql.gz` | Only if `identity-postgres` STS still has replicas (rollback path) |
 
 **Restore Passbolt MariaDB** (from a fleet backup bundle):

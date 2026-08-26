@@ -55,7 +55,7 @@ folder is the human reference.
 | [siem-retired.md](operations/siem-retired.md) | Wazuh — retired |
 | [mail.md](operations/mail.md) | Stalwart, DNS, PTR |
 | [mail-freeze.md](operations/mail-freeze.md) | Frozen mail addresses and store |
-| [identity.md](operations/identity.md) | Vaultwarden, Passbolt, Authentik, Logto, Hanko, Cerbos |
+| [identity.md](operations/identity.md) | Vaultwarden, Passbolt, Authentik, Cerbos (Logto and Hanko retired) |
 | [cloudflare.md](operations/cloudflare.md) | Edge policy, portals, client tunnels |
 | [supabase.md](operations/supabase.md) | Control-plane database |
 

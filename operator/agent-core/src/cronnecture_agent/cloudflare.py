@@ -22,8 +22,6 @@ HTTP_HOSTS = [
     "stack.cronnecture.com",
     "client.cronnecture.com",
     "auth.cronnecture.com",
-    "id.cronnecture.com",
-    "id-admin.cronnecture.com",
     "passbolt.cronnecture.com",
     "cronnecture.com",
     "www.cronnecture.com",

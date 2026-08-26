@@ -53,8 +53,6 @@ PROTECTED_DOMAINS = {
     "ops.cronnecture.com",
     "client.cronnecture.com",
     "passbolt.cronnecture.com",
-    "id.cronnecture.com",
-    "id-admin.cronnecture.com",
     "auth.cronnecture.com",
     "stack.cronnecture.com",
     "control.cronnecture.com",

@@ -2,7 +2,7 @@
 
 **Canonical go-live plan** for Cronnecture: verified baseline → gaps → ordered actions → definition of done.
 
-**Verified:** 2026-08-26 (docs vs live tree: Logto deleted, staging Supabase deleted, monitoring ns not deployed). Prior passes 2026-08-22 / 2026-08-11 / 2026-07-28 / 2026-07-26.  
+**Verified:** 2026-08-26 evening (cluster apply after Logto/Hanko deletion: monitoring live, 2 general workers, fleet SHA `c0e1200` on production CP). Prior passes 2026-08-26 morning / 2026-08-22 / 2026-08-11 / 2026-07-28 / 2026-07-26.  
 Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadmap.md). Product phases: [roadmap.md](../architecture/roadmap.md).
 
 ---
@@ -15,7 +15,7 @@ Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadma
 |------|----------------|
 | k3s | `v1.35.4+k3s1` — `cp-master-01`, `worker-general-01`, `worker-general-02` (all Ready) |
 | Inventory | 1× `k3s_server`, 2× `compute_general`; `[siem]` empty (Wazuh retired); `edge_lb` / `compute_cpu` / `compute_memory` empty |
-| Control plane | `platform` ns, **2/2** Ready, image `control-plane:5332744-2693f09fb3d7`, UI cache buster **`?v=2.1.0`**, API **`0.34.0`**, memory limit **`10Gi`** (request `256Mi`), rollout `maxSurge:1` / `maxUnavailable:0` |
+| Control plane | `platform` ns, **3/3** Ready, image `control-plane:c0e1200-…`, UI cache buster **`?v=2.1.0`**, API **`0.34.0`**, memory limit **`10Gi`** (request `256Mi`), rollout `maxSurge:1` / `maxUnavailable:0` |
 | Staging | **Not deployed.** Previous Supabase project `cronnecture-staging` was deleted 2026-08-26. Recreate a project before `make deploy-staging`. |
 | Monitoring | Prometheus + Alertmanager + kube-state-metrics + 3/3 node-exporters (`make monitoring`, 2026-08-26). No Grafana. |
 | Registry | NodePort **30500**, storage **S3/R2** bucket `cronnecture-fleet-registry` (Basic auth required) |
@@ -31,7 +31,8 @@ Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadma
 | `staging-ops.cronnecture.com` | May still resolve | Staging CP **not deployed** (Supabase project deleted 2026-08-26) |
 | `webmail.cronnecture.com` | Proxied | Access → webmail SPA (also `ops…/webmail`) |
 | `cronnecture.com` / `www` | Proxied | Marketing → Traefik → `cronnecture-website` |
-| `wazuh.cronnecture.com` | leftover | **SIEM retired** — do not treat as live |
+| `wazuh.cronnecture.com` | **none** | **SIEM retired** — do not treat as live |
+| `id.cronnecture.com` / `id-admin` / `passkeys` | **retired** | Logto/Hanko DNS removed 2026-08-26 (`cf_retired_dns`). Do not treat as live. |
 | `mail.cronnecture.com` | **A → `31.97.126.9`** | SMTP entry (not tunnel) |
 | `traefik.cronnecture.com` | **none** | `traefik_dashboard_enabled: false` |
 | `rancher.cronnecture.com` | **none** | `rancher_enabled: false` (cattle-* pods may still linger) |
@@ -56,7 +57,7 @@ Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadma
 |------|----------|
 | Platform readiness | Required **3/3** OK (`mail_server`, `smtp`, `registry`); Stripe + webhook secrets **ok** (optional); `auto_deploy` = 0 apps |
 | Policy | Pay-needed **immediately**; site suspend only after **90 days** unpaid ([stripe-billing.md](../platform/stripe-billing.md)) |
-| Pilot | **Historical** — rehearsal tenant `decinemaat` was **intentionally deleted** 2026-07-28 (job `3795`). No current live pilot. Empty CF zone `cronnecture.eu` may remain for reuse (do not delete as cleanup). |
+| Pilot | **Live** — paying handshake **NoordDrive** (`noorddriveautos`, client 29). Rehearsal tenant `decinemaat` was **intentionally deleted** 2026-07-28 (job `3795`). Empty CF zone `cronnecture.eu` may remain for reuse (do not delete as cleanup). |
 | Portal Access (historical) | Was non-empty for the deleted pilot (`svenbraad.work@gmail.com`, `svenbraad@gmail.com`) — do not treat as a live allowlist |
 | Pilot site (historical) | Was `https://cronnecture.eu` Access-gated for rehearsal; public paying clients need Access off |
 
@@ -90,15 +91,13 @@ Welcome, Infrastructure (Fleet: Topology · Cluster · Nodes · **Self-heal** ·
 | ~~P1~~ | ~~Support / legal baseline~~ | — | **Closed** — Terms/Privacy in Business + issued to pilot Documents; marketing `/terms` `/privacy` **200**; support `support@cronnecture.com`; portal footer Terms/Privacy live |
 | ~~P1~~ | ~~No push operator alerting~~ | — | **Closed** — `notify-ops.sh` on health/backup/watchdog → `info@` + `svenbraad.work@gmail.com` |
 | ~~**P2**~~ | ~~Off-box vault/SSH clone~~ | — | **Closed 2026-07-26** — break-glass pack on R2 + `worker-general-01`; see §6 |
-| **P2** | Single k3s server / etcd | Accept for MVP; break-glass [RB-11](../runbooks/emergency-management.md) |
 | **P2** | Push-to-deploy off | Optional for first clients |
-| **P2** | Rancher leftovers | `cattle-*` pods without portal DNS — cleanup later; do not advertise `rancher.*` |
+| **P2** | Rancher leftovers | `cattle-*` APIServices without portal DNS — cleanup later; do not advertise `rancher.*` |
 
 ### Explicit unknowns
 
 - Stripe Dashboard webhook **delivery history** UI (DB ledger has events; Dashboard not opened here)
-- Wazuh agent coverage / recent auto-block activity
-- Whether first paying client site should be public (former pilot `cronnecture.eu` was Access-gated for rehearsal)
+- Whether NoordDrive's public site should stay Access-gated via site-logto (oauth2-proxy → Authentik; cookie still `_site_logto`)
 
 ---
 
@@ -110,7 +109,7 @@ Welcome, Infrastructure (Fleet: Topology · Cluster · Nodes · **Self-heal** ·
 4. [x] **Billing failsafe drill** — Webhook ledger then had `customer.subscription.updated` (decinemaat active) + smoke `invoice.payment_failed`; dry-run reconcile `ok` (1 client, no suspend). Safe past_due observation (DB only, `past_due_since=now`): ops CRM billing + Business finance + customer-portal payload showed pay-needed / Manage billing (`can_manage_billing` + `pay_now`); site stayed `active`, `billing_maintenance_active=false`, no suspend. Reverted (Stripe dry-run sync also restores `active`). **Did not** suspend `decinemaat` during the drill.
 5. [x] **Portal polish for humans** — Support `support@cronnecture.com` + pilot welcome blurb; Terms/Privacy in Business docs + issued on (then-live) pilot Documents; marketing `/terms` `/privacy` **200**; Access emails non-empty for that pilot; Stripe Customer Portal session URL OK. Footer Terms/Privacy links staged in `static/customer-portal` (ship on next `make release`).
 6. [x] **Minimum alerting** — `notify-ops.sh` wired into health/backup/watchdog; cron `FLEET_NOTIFY_TO=info@cronnecture.com,svenbraad.work@gmail.com`; probe delivered to both.
-7. [ ] **Second `compute_general`** — **Blocked on VPS** (no Hostinger/Hetzner API in vault). Tunnel ingress code is replica-HA ready (`127.0.0.1`). After purchase: Ops **Fleet → Nodes** (role `general`) or `make add-node IP=… CLASS=general`, then confirm `make cloudflare && make clients` if needed.
+7. [x] **Second `compute_general`** — **done** 2026-08 (`worker-general-02`, `72.60.32.178`). Remaining HA gap is etcd/mail on `cp-master-01`, not a third worker.
 8. [x] **Off-box break-glass** — Pack stamp `20260726-222042` → R2 `break-glass/latest/` + `worker-general-01:/var/backups/cronnecture-break-glass/latest/`; weekly cron Sun 04:00 UTC; `make break-glass`.
 9. [x] **Restore fire drill** — **passed** 2026-07-26 (6/6): stamp `20260726-031501`, emergency scratch restore, etcd snapshot, R2 manifest; DB skipped (Supabase PITR). Weekly Sun 05:30 UTC via host cron + Automation `restore_drill`; logs `/var/log/cronnecture-fleet-restore-drill.log` + `…/restore-drill.jsonl`; `make restore-drill`.
 10. [x] **Portal footer legal links** — shipped via `make control-plane` 2026-07-26 (Terms/Privacy in customer-portal footer). Optional remaining: enable auto-deploy per app.
@@ -167,9 +166,9 @@ All must be true:
 
 ### What's next
 
-1. **Second `compute_general`** when ready (resilience / volume) — only remaining MVP-ordered infra gap intentionally skipped. After purchase: `make add-node IP=… CLASS=general` then `make cloudflare && make clients`.
+1. **etcd quorum / mail off the control node** when ready to spend on 2 control-class VPS ([RB-10](../runbooks/scale-to-ha.md)). Two general workers already exist.
 2. **Manual:** download `break-glass-pack.tar.gz` once to encrypted laptop / password manager (refresh: `make break-glass`; weekly Sun 04:00 UTC).
-3. **Decision:** first paying client site public vs Access-gated (former pilot `cronnecture.eu` was Access-gated for rehearsal).
+3. Keep **`self_serve_live_payments=false`** until VAT is a real number. NoordDrive handshake money stays frozen.
 4. Optional: enable **Deploy on push** per app (CRM → Apps → Configure). Use **Rebuild & deploy** / **Roll image** on the Apps tab for manual rolls.
 
 ### Client management upgrade (2026-07-27)

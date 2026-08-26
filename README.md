@@ -28,7 +28,7 @@ with this file.
 | Piece | Namespace | Access |
 |---|---|---|
 | Stalwart | `mail` | `mail.cronnecture.com`, hostPorts 25/587 |
-| Vault / Authentik / Logto / Passbolt / Hanko | `identity` | node-tunnel → Traefik ClusterIP |
+| Vault / Authentik / Passbolt / Cerbos | `identity` | node-tunnel → Traefik ClusterIP |
 | Webmail, website, customer portal | `platform` | same tunnel |
 | Operator UI + API | `cronnecture-system` | https://control.cronnecture.com |
 | Overlay | `cronnecture-intelligence` | in-cluster |

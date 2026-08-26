@@ -20,7 +20,7 @@ Locked priorities as of **2026-07-26**.
 
 - [x] Unified service error mapping, readiness probes, JSON logging, cf_clients Postgres registry
 - [x] Mail checks in `make health`
-- [x] Customer portal on `client.cronnecture.com` (Logto; Access off); no `insights.*` product
+- [x] Customer portal on `client.cronnecture.com` (Authentik OIDC; Access off); no `insights.*` product
 
 ## Phase 1 — Business layer (mostly done)
 
@@ -34,12 +34,12 @@ Locked priorities as of **2026-07-26**.
 
 ## Phase 1.5 — Safe deploys ✅
 
-- [x] Staging (`platform-staging`, `make deploy-staging`, `staging-ops.{zone}`)
+- [x] Staging path exists (`make deploy-staging`, `staging-ops.{zone}`). **Live staging CP is down** — Supabase project `cronnecture-staging` was deleted 2026-08-26; recreate before `make release` is honest again.
 - [x] Zero-downtime production rolling deploy
-- [x] Production 2-replica control-plane
+- [x] Production 2-replica control-plane (live is **3**)
 - [x] Cloudflare edge maintenance (Worker + KV)
 - [x] `make release` flow
-- [ ] Second compute node for client ingress HA ([RB-10](../runbooks/scale-to-ha.md)) — **MVP risk** (blocked on adding VPS capacity)
+- [x] Second compute node (`worker-general-01` + `worker-general-02`) — **done 2026-08**. Next HA purchase is etcd quorum, not another worker ([RB-10](../runbooks/scale-to-ha.md)).
 - [ ] HA control plane / edge at ≥5–7 nodes via placement policy ([resilience.md](resilience.md) V-04/V-05) — needs more hosts
 - [ ] Identity Supabase **PITR** on `cronnecture-identity` (or equivalent) — **deferred** with HA / more VPS budget (~€100/mo; not urgent; current survival = Passbolt dumps + fleet→R2 + break-glass + provider daily backups if plan includes them). See [identity.md](../operations/identity.md), [backup.md](../operations/backup.md)
 - [ ] Control-plane monolith split (further router/service peel beyond current strangler) — deferred; freeze list in [freeze-list.md](freeze-list.md)

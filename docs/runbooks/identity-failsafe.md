@@ -6,9 +6,10 @@ Make login survive one general worker dying. The fleet side is wired. The remain
 
 ## Already done on the fleet
 
-- Logto, Hanko, Cerbos: 2 replicas, one per `pool=general` worker, ClusterIP load-balanced
-- Authentik: stays **1** replica until the Supabase session pooler is larger than 15
-- Authentik Redis host now comes from `identity-secrets` (`authentik-redis-host`), so it can move off the PVC without rewriting YAML
+- Logto and Hanko: **retired 2026-08-26** (cluster objects deleted)
+- Cerbos: 2 replicas, one per `pool=general` worker, ClusterIP load-balanced
+- Authentik: stays **1** replica on in-cluster `identity-postgres` (not the identity Supabase pooler)
+- `backup-fleet.sh` **requires** `pg_dump authentik` when identity-postgres has replicas
 - Helper: `make identity-failsafe` (status) and `scripts/identity-failsafe.sh`
 
 ## What you do (in this order)
@@ -99,7 +100,6 @@ Refresh the pack after key rotation: `make break-glass` on the control node, the
 cd /home/dev/stack
 ./scripts/identity-failsafe.sh status
 curl -sS -o /dev/null -w '%{http_code}\n' https://auth.cronnecture.com/-/health/ready/
-curl -sS -o /dev/null -w '%{http_code}\n' https://id.cronnecture.com/api/status
 ```
 
-Done when: Authentik Redis host is not `identity-redis`, Logto DSN host is not `logto-postgres:5432`, Authentik is 2/2 on two nodes, and both public health URLs return 200/204.
+Done when: Authentik Redis host is not `identity-redis`, Authentik is 2/2 on two nodes, and the public health URL returns 200/204. Logto is retired — do not probe `id.cronnecture.com`.
