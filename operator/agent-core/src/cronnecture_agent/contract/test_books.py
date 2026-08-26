@@ -140,6 +140,63 @@ class BooksTests(unittest.TestCase):
                 self.assertTrue(restored[0].startswith(b"%PDF"))
                 self.assertTrue((Path(tmp) / "files" / "pdf1").exists())
 
+    def test_hydrate_reverse_charge_aangifte_liability(self):
+        from cronnecture_agent.contract.btw import extract_btw, hydrate_ledger
+
+        hit = extract_btw(
+            "Factuur BTW verlegd 21% € 0,00 Verleggingsregeling",
+            currency="EUR",
+            net=100,
+        )
+        self.assertEqual(hit["kind"], "reverse_charge")
+        self.assertEqual(hit["vatAmount"], 0)
+        self.assertEqual(hit["aangifteVatAmount"], 21)
+
+        github = extract_btw("GitHub Total USD $39.00", currency="USD", net=39)
+        self.assertEqual(github["kind"], "exempt")
+        self.assertFalse(github["reverseCharge"])
+
+        unknown = extract_btw("Factuur Totaal excl. BTW € 200,00", currency="EUR", net=200)
+        self.assertEqual(unknown["kind"], "unknown")
+
+        dutch = extract_btw(
+            "Coolblue\nSubtotal € 50,00\nBTW 21% € 10,50\nTotaal € 60,50",
+            currency="EUR",
+            net=50,
+        )
+        self.assertEqual(dutch["kind"], "standard")
+        self.assertEqual(dutch["vatAmount"], 10.5)
+
+        state = empty_ledger()
+        state["invoices"] = [
+            {
+                "id": "rc1",
+                "amountExcl": 80,
+                "vatRate": 0,
+                "vatAmount": 0,
+                "reverseCharge": True,
+            }
+        ]
+        hydrated = hydrate_ledger(state)
+        self.assertEqual(hydrated["invoices"][0]["btwKind"], "reverse_charge")
+        self.assertEqual(hydrated["invoices"][0]["aangifteVatAmount"], 16.8)
+
+        usd = empty_ledger()
+        usd["invoices"] = [
+            {
+                "id": "gh1",
+                "amountExcl": 31.08,
+                "vatRate": 0,
+                "vatAmount": 0,
+                "reverseCharge": True,
+                "currency": "USD",
+            }
+        ]
+        hydrated_usd = hydrate_ledger(usd)
+        self.assertEqual(hydrated_usd["invoices"][0]["btwKind"], "exempt")
+        self.assertFalse(hydrated_usd["invoices"][0].get("reverseCharge"))
+        self.assertIsNone(hydrated_usd["invoices"][0].get("aangifteVatAmount"))
+
 
 if __name__ == "__main__":
     unittest.main()

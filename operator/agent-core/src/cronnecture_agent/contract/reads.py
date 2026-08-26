@@ -136,6 +136,38 @@ def _invoice_from_billing(inv: dict[str, Any], slug: str) -> dict[str, Any]:
         mapped = "upcoming"
     else:
         mapped = "open"
+    vat_amount = None
+    vat_rate = None
+    btw_kind = inv.get("btwKind") or inv.get("btw_kind")
+    aangifte = inv.get("aangifteVatAmount") or inv.get("aangifte_vat_amount")
+    if inv.get("btw_amount") is not None:
+        vat_amount = _eur(inv.get("btw_amount"))
+        vat_rate = inv.get("btw_rate")
+    elif inv.get("vatAmount") is not None:
+        vat_amount = _eur(inv.get("vatAmount"))
+        vat_rate = inv.get("vatRate")
+    elif inv.get("total_excluding_tax") is not None or inv.get("tax") is not None:
+        ex = _cents(inv.get("total_excluding_tax")) if inv.get("total_excluding_tax") is not None else None
+        tax = _cents(inv.get("tax")) if inv.get("tax") is not None else None
+        if tax is None and ex is not None:
+            tax = max(0.0, round(amount - ex, 2))
+        vat_amount = tax
+        if ex and tax and ex > 0:
+            pct = round((tax / ex) * 100)
+            vat_rate = 21 if abs(pct - 21) <= 2 else 9 if abs(pct - 9) <= 2 else 0 if tax == 0 else None
+    reverse = bool(inv.get("reverseCharge") or inv.get("reverse_charge") or str(inv.get("billing_reason") or "").find("reverse") >= 0)
+    if reverse:
+        btw_kind = "reverse_charge"
+        if aangifte in (None, "") and (vat_amount or 0) > 0:
+            aangifte = vat_amount
+        vat_amount = 0
+        vat_rate = 0
+    elif btw_kind is None and vat_rate == 21:
+        btw_kind = "standard"
+    elif btw_kind is None and vat_rate == 9:
+        btw_kind = "reduced"
+    elif btw_kind is None and vat_amount == 0:
+        btw_kind = "exempt"
     return {
         "id": str(inv.get("id") or inv.get("number") or ""),
         "number": str(inv.get("number") or inv.get("id") or ""),
@@ -144,6 +176,11 @@ def _invoice_from_billing(inv: dict[str, Any], slug: str) -> dict[str, Any]:
         "status": mapped,
         "date": _iso_day(inv.get("paid_at") or inv.get("created_at") or inv.get("date") or inv.get("created")),
         "source": str(inv.get("source") or "stripe"),
+        "vatAmount": vat_amount,
+        "vatRate": vat_rate,
+        "btwKind": btw_kind,
+        "aangifteVatAmount": aangifte,
+        "reverseCharge": reverse or None,
     }
 
 

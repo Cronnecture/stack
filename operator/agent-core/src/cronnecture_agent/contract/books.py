@@ -15,6 +15,7 @@ from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
 from .s3compat import S3Store, load_s3_config
+from .btw import hydrate_ledger
 
 log = structlog.get_logger()
 
@@ -192,8 +193,8 @@ def load_ledger(infra: Any) -> dict[str, Any]:
                 _write_r2(best)
             except Exception as exc:
                 log.warning("books_r2_hydrate_failed", error=str(exc)[:300])
-    _ledger_cache = (now, best)
-    return best
+    _ledger_cache = (now, hydrate_ledger(best))
+    return _ledger_cache[1]
 
 
 def save_ledger(infra: Any, state: dict[str, Any]) -> None:
