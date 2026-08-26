@@ -21,7 +21,7 @@ export default function Identity() {
     <div>
       <PageHeader
         title="Identity"
-        lead="Authentik, Logto, Vaultwarden, Passbolt, and Hanko. Secrets stay in-cluster. Restarts do not wipe data."
+        lead="Authentik, Vaultwarden, Passbolt, and Cerbos. Hanko and Logto are retired. Secrets stay in-cluster. Restarts do not wipe data."
       />
       <div className="stats">
         <Stat value={data.healthy ? "Healthy" : "Check"} label="Identity" tone={data.healthy ? "ok" : "bad"} />

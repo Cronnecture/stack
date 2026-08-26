@@ -12,34 +12,34 @@ Top-tier self-hosted identity, password management, secret sharing, CIAM, and au
 
 Do **not** remove Cloudflare SSH CA or convert SSH Access apps to self-hosted/password SSH. See `config/inventory/group_vars/all/cf_ssh.yml` and `roles/cloudflare_mgmt/tasks/ssh_access.yml`.
 
-## Wired architecture (2026-08-12)
+## Wired architecture (2026-08-26)
 
 ```
 Internet
    │
    ├─ Cloudflare Access (web + ssh-*) ──► Authentik OIDC only (no email OTP)
    │         │
-   │         ├─ ops / staging-ops / passbolt / wazuh / id-admin / webmail / …
+   │         ├─ ops / control / passbolt / webmail / id-admin leftovers / …
    │         └─ ssh-*.cronnecture.com  (type=ssh) ──► SSH CA short-lived cert
    │
-   ├─ client.cronnecture.com (Access off) ──► Logto product SSO (invite-only)
+   ├─ client.cronnecture.com (Access off) ──► Authentik product OIDC (invite-only)
+   │         cookie still named cp_logto_session
    │
-   └─ Public (no Access) ──► auth (Authentik) / id (Logto) / passkeys (Hanko) / vault (Vaultwarden)
+   └─ Public (no Access) ──► auth (Authentik) / vault (Vaultwarden)
                                       │
                                       ▼
-                               k3s NodePorts (identity ns) + Cerbos ClusterIP
+                               identity ns ClusterIP + Cerbos
 
 Databases:
-  Authentik / Hanko / Vaultwarden → Supabase project cronnecture-identity (session pooler :5432)
-  Logto → on-cluster logto-postgres (Node/pg + Supabase Supavisor is unreliable)
+  Authentik / Hanko → in-cluster identity-postgres
+  Vaultwarden → Supabase project cronnecture-identity (session pooler :5432)
   Passbolt → on-cluster MariaDB (CE is MySQL-only)
   Authentik Redis → on-cluster identity-redis
 
-Mail path: Authentik + Passbolt + Logto → Stalwart (mail ns) submission **:587** as `noreply@cronnecture.com` (not :25 — external relay denied)
-Logto public CIAM: social **Google only** (+ username/password + Logto TOTP MFA). No “Sign in with Authentik” on product SIE.
-Authentik = admin/ops edge IdP (CF Access for ops/ssh/passbolt/id-admin/…); OIDC app `logto-ciam` kept unused for future enterprise, not on public SIE.
-Traditional app **Cronnecture customer portal** for product OIDC
-MFA: Authentik TOTP for ops; Logto admin + default tenant MFA Mandatory (TOTP) for product
+Mail path: Authentik + Passbolt → Stalwart (mail ns) submission **:587** as `noreply@cronnecture.com`
+Logto cluster objects were **deleted 2026-08-26**. Product SSO is Authentik. Cookie / env names still say logto.
+Authentik = admin/ops edge IdP (CF Access) **and** customer portal OIDC.
+MFA: Authentik TOTP for ops and product.
 ```
 
 ## Components
@@ -48,13 +48,13 @@ MFA: Authentik TOTP for ops; Logto admin + default tenant MFA Mandatory (TOTP) f
 |---------|-----|----------|------|
 | **Vaultwarden** | `https://vault.cronnecture.com` | **No Cloudflare Access** (`skip_access`) | Ops password vault (Bitwarden clients); use **Send** for one-time secrets |
 | **Passbolt** | `https://passbolt.cronnecture.com` | Access → Authentik | Team credential sharing + audit |
-| **Authentik** | `https://auth.cronnecture.com` | Public | Admin/ops edge IdP (**2026.8.0**) for CF Access (not Logto product social). **1 replica** — Supabase session pooler is 15 clients; a second server exhausts it. |
-| **Logto** | `https://id.cronnecture.com` | Public | Product CIAM — Google (+ password/MFA); no Authentik button. **2 replicas** behind ClusterIP; `logto-postgres` stays 1× PVC. |
-| **Logto Admin** | `https://id-admin.cronnecture.com` | Access → Authentik | Logto console |
-| **Hanko** | `https://passkeys.cronnecture.com` | Public | Passkey / WebAuthn API (image pinned `v2.7.0`; not wired to the customer portal). **2 replicas**. |
+| **Authentik** | `https://auth.cronnecture.com` | Public | Admin/ops edge IdP **and** customer-portal OIDC (**2026.8.0**). **1 replica** on in-cluster `identity-postgres`. |
+| **Logto** | — | **Retired 2026-08-26** | Cluster objects deleted. Cookie `cp_logto_session` and `logto_oidc.py` remain as names. |
+| **Logto Admin** | `https://id-admin.cronnecture.com` | leftover DNS | Do not treat as live product SSO. |
+| **Hanko** | — | **Retired 2026-08-26** | Unwired leftover; cluster objects deleted. DB `hanko` may remain on identity-postgres. |
 | **Cerbos** | `identity/cerbos:3592` | ClusterIP | Fine-grained AuthZ (ops policies shipped). **2 replicas**, required anti-affinity. |
 
-Logto, Hanko, and Cerbos run **2 replicas** (one per general worker). Traefik → ClusterIP load-balances ready endpoints. Authentik stays **1 replica** until the Supabase session pooler is larger than 15. Operator steps to finish failsafe (hosted Redis, dedicated Logto DB, raise pooler, laptop clone): [RB-16](../runbooks/identity-failsafe.md).
+Logto and Hanko are retired. Cerbos runs **2 replicas**. Authentik stays **1 replica**. Operator failsafe: [RB-16](../runbooks/identity-failsafe.md).
 
 **Removed:** Password Pusher — use Vaultwarden Send.
 
@@ -85,15 +85,14 @@ Details: [backup.md](backup.md#off-box-break-glass-pack). Vault password (`~/.an
 
 | Data store | Where | Notes |
 |------------|-------|--------|
-| Authentik | Supabase `cronnecture-identity` DB `authentik` | Migrated from PVC; Redis still on-cluster |
-| Hanko | Supabase DB `hanko` | Migrated |
-| Vaultwarden | Supabase DB `vaultwarden` | Migrated; attachments PVC unchanged |
-| Logto | **On-cluster** `logto-postgres` | Supabase Supavisor returns `ENOIDENTIFIER` for Logto/Node; dedicated PVC |
+| Authentik | In-cluster `identity-postgres` DB `authentik` | Migrated off Supabase 2026-08-26 |
+| Hanko | In-cluster `identity-postgres` DB `hanko` (orphaned) | Retired 2026-08-26; dump is best-effort |
+| Vaultwarden | Supabase DB `vaultwarden` | Attachments PVC unchanged |
+| Logto | **Deleted 2026-08-26** | Do not restore without a dedicated cutover |
 | Passbolt | On-cluster MariaDB | CE is MySQL/MariaDB only — not Postgres |
 | Redis | On-cluster `identity-redis` | Not Supabase |
 
-Vault keys: `vault_identity_database_host/user/password/port/sslmode` (+ `vault_identity_supabase_project_ref`).  
-Connection: session pooler `aws-0-eu-central-1.pooler.supabase.com:5432` with user `postgres.<ref>` (except Logto).
+Vault keys: `vault_identity_database_host/user/password/port/sslmode` (+ `vault_identity_supabase_project_ref`) for Vaultwarden. Authentik/Hanko use in-cluster `identity-postgres`.
 
 ### Identity data protection (current vs later)
 
@@ -101,8 +100,9 @@ Connection: session pooler `aws-0-eu-central-1.pooler.supabase.com:5432` with us
 |-------|------|--------|
 | Fleet → R2 | Passbolt MariaDB dump (`identity/passbolt.sql.gz`) + emergency bundle | **Now** — `backup-fleet.sh` |
 | Break-glass | Vault pass, vault.yml, SSH key, R2 env, inventory → R2 + worker | **Now** — `make break-glass` |
-| Supabase `cronnecture-identity` | Authentik / Hanko / Vaultwarden | **No fleet `pg_dump`**. Provider **daily backups** only if the project is on a paid plan that includes them (Free has none). **PITR deferred** (~€100/mo) until HA / more VPS budget — see [RB-10](../runbooks/scale-to-ha.md) |
-| Logto | On-cluster `logto-postgres` PVC | Re-seedable; not in fleet identity dump today |
+| Supabase `cronnecture-identity` | Vaultwarden only | **No fleet `pg_dump`**. Provider **daily backups** only if the project is on a paid plan. **PITR deferred**. |
+| Authentik / Hanko | In-cluster `identity-postgres` PVC | **No fleet pg_dump today** — add this before relying on restore |
+| Logto | Retired | — |
 
 Accepted for current scale: survive without identity PITR. When adding VPS / HA (5–7 nodes), enable PITR (or equivalent) on `cronnecture-identity` in the same step — [backup.md](backup.md), [roadmap.md](../architecture/roadmap.md).
 
@@ -112,16 +112,16 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 
 | Item | State |
 |------|--------|
-| Authentik version | **2026.5.6** on Supabase; MFA **forced on next login** (TOTP enroll) |
+| Authentik version | **2026.8.0** on in-cluster Postgres; MFA **forced on next login** (TOTP enroll) |
 | Authentik SMTP | Stalwart `noreply@` — send test OK |
 | Passbolt SMTP | Stalwart **:587** + `noreply@` (same secret). `:25` denies external relay — was the “Controleer je mailbox!” stall. |
 | Authentik OIDC `cloudflare-access` | **LIVE** for CF Access (`vault_authentik_cf_oidc_*`; fallback `.identity/authentik_cloudflare_oidc.env`) |
 | Authentik OIDC `logto-ciam` | Exists unused (future enterprise); **not** on Logto public SIE |
-| Cloudflare Access ← Authentik | **LIVE** on web + ssh-* (no email OTP). Customer portal is Logto, not Access |
+| Cloudflare Access ← Authentik | **LIVE** on web + ssh-* (no email OTP). Customer portal is Authentik OIDC (`cp_logto_session`), not Access |
 | Vaultwarden | Supabase DB; signups off; **`skip_access`**; prelogin/password **200** |
 | Passbolt | Access → Authentik; **browser extension + recovery kit still required** |
-| Logto | On-cluster `logto-postgres`; admin `sven`; MFA Mandatory TOTP; SMTP + **Google** on public SIE (Authentik social off SIE); Traditional app **Cronnecture customer portal** → CP `LOGTO_*` |
-| Hanko | Healthy on Supabase; RP id `cronnecture.com` |
+| Logto | **Retired 2026-08-26** | Cluster objects gone; names linger in code |
+| Hanko | Deployed, **not wired** to the customer portal; RP id `cronnecture.com` |
 | Cerbos | Healthy; CP mounts `CERBOS_URL`/`CERBOS_ENABLED=1` (ops API mirror; fail-closed on destructive; OPS_API_TOKEN + superadmin skip) |
 | SSH Access | `type=ssh` + SSH CA; Authentik MFA only |
 | Ops password login | Off by default — Access email bridges ([operator-access.md](operator-access.md)) |
@@ -131,10 +131,10 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 | Goal | Flow |
 |------|------|
 | Ops / staging-ops | **CF Access → Authentik → TOTP → ops dashboard** (no second password; session from Access email) |
-| Passbolt / id-admin / webmail / wazuh | **CF Access → Authentik → password → TOTP** |
+| Passbolt / webmail | **CF Access → Authentik → password → TOTP** |
 | Authentik admin | `https://auth.cronnecture.com` → password → TOTP enroll |
-| Logto Admin | Access → Authentik → **`https://id-admin.cronnecture.com`** → Logto `sven` (+ TOTP). Do not use bare `id.cronnecture.com` / `/unknown-session`. |
-| Logto CIAM (apps) | Start from the **app** (portal **Sign in** → `/api/auth/logto/login`), not bare `https://id.cronnecture.com/` (that redirects to `/unknown-session` by design). Public social **Google only** (+ password/MFA); callback `https://id.cronnecture.com/callback/google`. Authentik is **not** a product login button. |
+| Product portal | `https://client.cronnecture.com` → Authentik OIDC (`/api/auth/logto/login`) → `cp_logto_session` |
+| Logto Admin / `id.cronnecture.com` | **Retired** — do not send customers here |
 | Vaultwarden / Bitwarden apps | `https://vault.cronnecture.com` only (no CF Access) |
 | SSH | `cloudflared access ssh` → **CF Access → Authentik → TOTP** → **SSH CA** cert |
 | Ops recovery (Authentik down) | SSH + `OPS_API_TOKEN`, or `OPS_PASSWORD_LOGIN=1` + per-user password |
@@ -148,7 +148,7 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 5. Enter 6-digit code — required on every later login  
 6. Change password after first successful MFA login  
 
-Logto admin (`sven`): same idea inside Logto Admin Console → MFA / security (policy already **Mandatory** TOTP).
+Logto is gone. Portal OIDC lives in `logto_oidc.py` talking to Authentik (`AUTHENTIK_PORTAL_*`, fallback `LOGTO_*`).
 
 ### Bitwarden app (Vaultwarden)
 

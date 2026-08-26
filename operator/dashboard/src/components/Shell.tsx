@@ -40,7 +40,7 @@ export default function Shell() {
     <div className="app">
       <aside className="nav">
         <div className="brand">
-          <span className="brand-mark">CN</span>
+          <img className="brand-mark" src="/logo.png" alt="" width={32} height={32} />
           <div>
             <div className="brand-name">Cronnecture</div>
             <div className="brand-sub">Control</div>

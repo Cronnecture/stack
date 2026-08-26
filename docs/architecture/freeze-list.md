@@ -54,6 +54,7 @@ python3 services/control-plane/scripts/test_pooler_rewrite.py
 python3 services/control-plane/scripts/test_runner_allowlist.py
 python3 services/control-plane/scripts/test_fleet_catalog.py
 python3 services/control-plane/scripts/test_portals_hostname_sanity.py
+python3 services/control-plane/scripts/test_stripe_dispatch_parity.py
 # After a CP roll: make cp-images   # staging vs production image tags
 ```
 

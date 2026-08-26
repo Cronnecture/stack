@@ -16,7 +16,7 @@ NS_PURPOSE = {
     "platform": "JS APIs + leftover Python",
     "cronnecture-system": "Operator UI + agent-core",
     "mail": "Stalwart",
-    "identity": "Logto / Authentik / Passbolt / Hanko / Cerbos",
+    "identity": "Authentik / Passbolt / Cerbos",
     "kube-system": "k3s",
     "previews": "Demo sites",
     "cronnecture-intelligence": "Overlay (heal/scale off)",

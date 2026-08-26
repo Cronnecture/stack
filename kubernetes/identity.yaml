@@ -1017,142 +1017,6 @@ spec:
     port: 80
     targetPort: http
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hanko-config
-  namespace: identity
-  labels:
-    cronnecture.com/managed-by: stack
-data:
-  config.yaml: "database:\n  # url wins over discrete fields; sslmode must be in the\
-    \ DSN (ssl_mode is not a Hanko key).\n  # Password/host come from the rendered\
-    \ DSN (Supabase or in-cluster).\n  url: 'postgres://identity:H1BcGgB0HetZtltUW040cFmLtefdKbxe@identity-postgres:5432/hanko?sslmode=disable'\n\
-    \  dialect: postgres\nserver:\n  public:\n    address: \"0.0.0.0:8000\"\n    cors:\n\
-    \      allow_origins:\n        - \"https://cronnecture.com\"\n        - \"https://*.cronnecture.com\"\
-    \n        - \"https://client.cronnecture.com\"\n        - \"https://ops.cronnecture.com\"\
-    \n  admin:\n    address: \"0.0.0.0:8001\"\nsession:\n  lifespan: 24h\n  cookie:\n\
-    \    domain: \"cronnecture.com\"\n    http_only: true\n    secure: true\n    same_site:\
-    \ lax\npasskey:\n  enabled: true\npassword:\n  enabled: true\n  min_password_length:\
-    \ 10\nwebauthn:\n  relying_party:\n    id: \"cronnecture.com\"\n    display_name:\
-    \ Cronnecture\n    origins:\n      - \"https://passkeys.cronnecture.com\"\n  \
-    \    - \"https://client.cronnecture.com\"\n      - \"https://ops.cronnecture.com\"\
-    \nsecrets:\n  keys:\n    - Sr2ikuys1nuGsAt19FDpJXVl8DMmYUTkvroNSFGu7TU94UC83aThv6NgF11BILbr\n\
-    \  cookie:\n    - P7yVLhgt2fO1yUGCTU57lmDgtpkobB1F\n"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hanko
-  namespace: identity
-  labels:
-    app: hanko
-    cronnecture.com/managed-by: stack
-spec:
-  replicas: 2
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
-  selector:
-    matchLabels:
-      app: hanko
-  template:
-    metadata:
-      labels:
-        app: hanko
-    spec:
-      nodeSelector:
-        pool: general
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            preference:
-              matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: hanko
-            topologyKey: kubernetes.io/hostname
-      initContainers:
-      - name: migrate
-        image: ghcr.io/teamhanko/hanko:v2.7.0
-        args:
-        - migrate
-        - up
-        - --config
-        - /etc/config/config.yaml
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            cpu: 500m
-            memory: 256Mi
-        volumeMounts:
-        - name: config
-          mountPath: /etc/config
-          readOnly: true
-      containers:
-      - name: hanko
-        image: ghcr.io/teamhanko/hanko:v2.7.0
-        args:
-        - serve
-        - public
-        - --config
-        - /etc/config/config.yaml
-        ports:
-        - name: http
-          containerPort: 8000
-        volumeMounts:
-        - name: config
-          mountPath: /etc/config
-          readOnly: true
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: http
-          initialDelaySeconds: 15
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /health/alive
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 20
-        resources:
-          requests:
-            cpu: 200m
-            memory: 256Mi
-          limits:
-            cpu: '1'
-            memory: 1Gi
-      volumes:
-      - name: config
-        configMap:
-          name: hanko-config
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: hanko
-  namespace: identity
-  labels:
-    cronnecture.com/managed-by: stack
-spec:
-  type: ClusterIP
-  selector:
-    app: hanko
-  ports:
-  - name: http
-    port: 8000
-    targetPort: http
----
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -1160,13 +1024,38 @@ metadata:
   namespace: identity
   labels:
     cronnecture.com/managed-by: stack
+# Ingress from Traefik, platform/operator, monitoring, previews, and
+# namespaces labeled client=* (site-gate). Egress stays open so Vaultwarden
+# can reach Supabase and Authentik can reach Stalwart SMTP.
 spec:
   podSelector: {}
   policyTypes:
   - Ingress
   - Egress
   ingress:
-  - {}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: platform
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cronnecture-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: previews
+    - namespaceSelector:
+        matchExpressions:
+        - key: client
+          operator: Exists
   egress:
   - {}
 
@@ -1176,7 +1065,7 @@ spec:
 # scripts/sync-identity-db-secrets.py pins secrets to whatever the live
 # pods actually use — do not point Vaultwarden at an empty local DB.
 ---
-# Login frontends are 2 replicas / anti-affinity. Data PVCs stay 1.
+# Hanko cluster objects were removed 2026-08-26 (unwired leftover).
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -1202,16 +1091,3 @@ spec:
   selector:
     matchLabels:
       app: authentik-worker
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: hanko
-  namespace: identity
-  labels:
-    cronnecture.com/managed-by: stack
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: hanko

@@ -100,11 +100,11 @@ Host process on `k3s_server` (not a pod): **`cronnecture-job-worker`** claims `f
 | Namespace | What runs |
 |-----------|-----------|
 | `mail` | Stalwart (1 replica on the control node; **hostPorts 25/587**) |
-| `identity` | Vaultwarden, Passbolt, Authentik (1), Logto (2), Hanko (2), Cerbos (2) on `pool=general`. See [identity.md](../operations/identity.md). **SSH stays Cloudflare Access SSH CA** |
+| `identity` | Vaultwarden, Passbolt, Authentik (1), Cerbos (2) on `pool=general`. **Logto and Hanko deleted 2026-08-26.** See [identity.md](../operations/identity.md). **SSH stays Cloudflare Access SSH CA** |
 | `cronnecture-intelligence` | Overlay: master-orchestrator, cloudflare-manager, credential-manager, monitoring-system. Auto-heal / auto-scale **off** |
 | `previews` | Demo hub + per-UUID `pv-*` sites on `previews.cronnecture.com` |
 | `client-{slug}` | Per-tenant apps (live example: `client-noorddriveautos`) |
-| `monitoring` | **Not currently deployed.** Ansible role exists (`make monitoring`); no Prometheus/Grafana namespace on the cluster |
+| `monitoring` | Prometheus + Alertmanager + kube-state-metrics + 3/3 node-exporters. Applied 2026-08-26 (`make monitoring`). No Grafana. |
 
 Control plane pods use leader election (K8s Lease) for the background job sweeper.
 
@@ -135,7 +135,7 @@ ops.cronnecture.com  →  301 UI to control (APIs / webmail / portal stay)
 stack.cronnecture.com → 301 to control
 ```
 
-JS still owns catalog APIs: auth cookie, CRM writes, GitHub/Kaniko deploy, tunnel expose, jobs, fleet, mail list, public legal/handshake/contact, Stripe webhook HMAC. Python still owns customer portal + Logto, delete-client, billing GET/checkout, mail send/IMAP, GitHub OAuth callback, previews, self-heal events. GitHub OAuth callback bypasses Access (`/api/github/callback` on `ops.cronnecture.com`).
+JS still owns catalog APIs: auth cookie, CRM writes, GitHub/Kaniko deploy, tunnel expose, jobs, fleet, mail list, public legal/handshake/contact, Stripe webhook HMAC. Python still owns customer portal + Authentik OIDC (`logto_oidc.py`), delete-client, billing GET/checkout, mail send/IMAP, GitHub OAuth callback, previews, self-heal events. GitHub OAuth callback bypasses Access (`/api/github/callback` on `ops.cronnecture.com`).
 
 ### Client: customer portal
 
@@ -144,10 +144,10 @@ Browser → client.cronnecture.com (Cloudflare Access off — skip_access)
        → node-tunnel → Traefik ClusterIP (Host client.cronnecture.com)
        → Next.js client-portal (pages)
        → GET /portal + POST /portal/actions on control-plane-legacy
-       → Logto (id.cronnecture.com) → cp_logto_session
+       → Authentik OIDC → cp_logto_session (cookie name is historical)
 ```
 
-Canonical URL is **https://client.cronnecture.com/** (tenant from the Logto session). Legacy `/client/portal/{uuid}` redirects here. See [client-portal.md](../platform/client-portal.md).
+Canonical URL is **https://client.cronnecture.com/** (tenant from the Authentik session). Legacy `/client/portal/{uuid}` redirects here. See [client-portal.md](../platform/client-portal.md).
 
 ### Client public site
 
@@ -206,9 +206,9 @@ Wazuh is **not running**. `[siem]` is empty. Policy keys `cf_autoblock_*` remain
 7. **cloudflare** — edge policy + admin portals + SSH Access hostnames
 8. **client** — sync client tunnels from `cf_clients.yml`
 9. **fleet_ops** — backup/health cron + ansible-runner unit
-10. **monitoring** — node exporters + Prometheus (playbook exists; namespace not live)
+10. **monitoring** — node exporters + Prometheus + Alertmanager (live as of 2026-08-26)
 11. **mail** — Stalwart mail stack
-12. **identity** — Vaultwarden, Passbolt, Authentik, Logto, Hanko, Cerbos
+12. **identity** — Vaultwarden, Passbolt, Authentik, Cerbos (Logto and Hanko retired)
 13. **stack** — keep-set mail/identity YAML, overlay, operator UI, tunnel origins, close leftover HTTP NodePorts (`ansible/playbooks/stack.yml`)
 
 After `make add-node IP=…` (bootstrap → placement → inventory), the same `site.yml` path runs automatically.
@@ -220,7 +220,7 @@ After `make add-node IP=…` (bootstrap → placement → inventory), the same `
 | Client apps | No nodeSelector → any untainted worker |
 | JS APIs + Python control-plane + operator UI | `nodeSelector: node-role.kubernetes.io/control-plane: "true"` (or hostname `cp-master-01`) |
 | Identity, marketing site, registry | `nodeSelector: pool=general` |
-| Multiple replicas | kube-scheduler spreads when multiple workers exist (Logto / Hanko / Cerbos already 2×) |
+| Multiple replicas | kube-scheduler spreads when multiple workers exist (Cerbos already 2×; Authentik stays 1×) |
 
 Ingress backend for tunnels: Traefik ClusterIP (`cf_client_ingress_backend` in `ansible/config/inventory/group_vars/all/ingress.yml`). Host `:80` is not the origin. Client connectors run on every node so Cloudflare can fail over.
 

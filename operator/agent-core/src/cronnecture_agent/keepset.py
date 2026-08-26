@@ -19,7 +19,6 @@ IDENTITY_DEPLOYMENTS = [
     "authentik-worker",
     "passbolt",
     "passbolt-db",
-    "hanko",
     "identity-redis",
     "cerbos",
 ]
@@ -29,7 +28,6 @@ IDENTITY_APPS = [
     {"name": "Vaultwarden", "deploy": "vaultwarden", "url": "https://vault.cronnecture.com"},
     {"name": "Authentik", "deploy": "authentik-server", "url": "https://auth.cronnecture.com"},
     {"name": "Passbolt", "deploy": "passbolt", "url": "https://passbolt.cronnecture.com"},
-    {"name": "Hanko", "deploy": "hanko", "url": "https://passkeys.cronnecture.com"},
     {"name": "Cerbos", "deploy": "cerbos", "url": None},
 ]
 

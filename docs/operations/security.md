@@ -12,7 +12,7 @@ Security layers, secrets handling, and tenant isolation.
 | Transport | flannel wireguard-native pod encryption |
 | Host | fail2ban, auditd, unattended-upgrades, sysctl hardening |
 | Secrets | ansible-vault, k3s secrets encryption at rest |
-| SIEM | Wazuh FIM, log analysis, auto-block at CF edge |
+| SIEM | Wazuh FIM, log analysis, auto-block at CF edge — **retired; `[siem]` empty** |
 | Tenant | Per-client namespace, quota, network policy, isolated tunnel |
 
 ## Firewall (UFW)
@@ -174,8 +174,8 @@ See [backup.md](backup.md).
 ## Audit & compliance
 
 - **auditd** rules on all nodes (k3s token access, identity changes)
-- **Wazuh** agents on all non-siem nodes → manager on `[siem]`
-- Auto-block: alert level ≥ 10 with source IP → CF block for 24h
+- **Wazuh** — retired; `[siem]` empty. Host auditd remains. No auto-block manager.
+- Auto-block policy keys `cf_autoblock_*` have nothing to fire them until SIEM returns
 
 ## Hardening checklist (new node)
 
@@ -186,7 +186,7 @@ Automatic via `baseline.yml`:
 - [ ] cloudflared connector running
 - [ ] unattended-upgrades configured
 - [ ] sysctl hardening applied
-- [ ] Wazuh agent enrolled (if siem group exists)
+- [ ] Wazuh agent enrolled (no-op while `[siem]` is empty)
 
 ## Related docs
 

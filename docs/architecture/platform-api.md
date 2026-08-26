@@ -34,7 +34,7 @@ Python `JsCatalogGuardMiddleware` returns 501 `js_owned` for catalog-owned
 routes so a direct ClusterIP hit cannot dual-write.
 `/crm` redirects to the TSX clients workspace.
 Ops auth (`/api/auth/me`, login, access-login, logout) is JS and issues the
-same `ops_admin_session` cookie as Python. Logto customer SSO stays Python.
+same `ops_admin_session` cookie as Python. Authentik customer SSO stays Python (`logto_oidc.py`).
 
 Rollback:
 

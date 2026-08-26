@@ -1,9 +1,12 @@
-# SIEM (Wazuh)
+# SIEM (Wazuh) — retired
 
-Security monitoring and automatic edge blocking via Wazuh on dedicated `[siem]` nodes.
+**Status (2026-08-26):** Wazuh is **not running**. Inventory group `[siem]` is empty. `72.60.32.178` is `worker-general-02`, not a SIEM host. `wazuh.cronnecture.com` must not be treated as a live dashboard. Cloudflare `cf_autoblock_*` keys remain in policy with **no manager to fire them**.
 
-**Current host:** `72.60.32.178`  
-**Dashboard:** `https://wazuh.cronnecture.com` (Cloudflare Access)
+The rest of this file is the **historical** Wazuh operations manual, kept so the playbooks can be revived. Do not follow it as current incident response.
+
+---
+
+# SIEM (Wazuh) — historical runbook
 
 ## Architecture
 

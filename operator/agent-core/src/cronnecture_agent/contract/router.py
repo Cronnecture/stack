@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from urllib.parse import quote
 
@@ -304,6 +304,39 @@ async def delete_book_file(file_id: str):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
+
+
+async def _proxy_portal_docs(request: Request, doc_id: str | None = None):
+    """Next.js control portal talks to agent-core; CRUD lives on control-plane-legacy."""
+    suffix = f"/{doc_id}" if doc_id else ""
+    path = f"/api/portal-docs{suffix}"
+    params = dict(request.query_params) or None
+    payload = None
+    if request.method not in ("GET", "HEAD", "DELETE"):
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = None
+    code, body = await _reads(request).platform.request(
+        request.method,
+        path,
+        json=payload,
+        params=params,
+    )
+    if isinstance(body, (dict, list)):
+        return JSONResponse(content=body, status_code=code)
+    return JSONResponse(content={"detail": body}, status_code=code)
+
+
+@router.api_route("/api/portal-docs", methods=["GET", "POST"])
+@router.api_route("/api/portal-docs/", methods=["GET", "POST"], include_in_schema=False)
+async def portal_docs_collection(request: Request):
+    return await _proxy_portal_docs(request)
+
+
+@router.api_route("/api/portal-docs/{doc_id}", methods=["GET", "PATCH", "PUT", "DELETE"])
+async def portal_docs_item(request: Request, doc_id: str):
+    return await _proxy_portal_docs(request, doc_id)
 
 
 @router.get("/api/platform/catalog")

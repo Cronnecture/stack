@@ -79,7 +79,7 @@ Quote these separately (time & materials or a fixed add-on):
 
 | Surface | Default for paying clients | Notes |
 |---------|---------------------------|--------|
-| **Customer portal** | Always **Logto** (invite-only Google / password / TOTP) | Never advertise as public. Access is **off** on `client.cronnecture.com` (`skip_access`) so Stripe return URLs do not 1043 |
+| **Customer portal** | Always **Authentik OIDC** (invite-only; cookie `cp_logto_session`) | Never advertise as public. Access is **off** on `client.cronnecture.com` (`skip_access`) so Stripe return URLs do not 1043 |
 | **Production marketing / shop hostname** | **Public** (Access **off**) | Buyers expect an open site; CF proxy + tunnel still protect the origin |
 | **Staging, admin UIs, pre-launch** | **Access-gated** | Same pattern as the former rehearsal site on `cronnecture.eu` |
 

@@ -41,14 +41,18 @@ sudo chmod 644 "$MANIFESTS/stalwart.yaml" "$MANIFESTS/identity-stack.yaml" "$MAN
 
 kubectl apply -f "$ROOT/kubernetes/identity-ingress.yaml"
 
+echo "Pruning retired Logto / Hanko workloads (PVCs and identity-secrets stay)..."
+kubectl -n identity delete deploy,svc,cm,pdb,ingressroute logto logto-postgres hanko hanko-config \
+  --ignore-not-found >/dev/null || true
+kubectl -n identity delete ingressroute hanko --ignore-not-found >/dev/null || true
+
 echo "Waiting for mail + identity..."
 kubectl rollout status deployment/stalwart -n mail --timeout=180s
 kubectl rollout status deployment/vaultwarden -n identity --timeout=180s
 kubectl rollout status deployment/authentik-server -n identity --timeout=300s
 kubectl rollout status deployment/authentik-worker -n identity --timeout=300s
-kubectl rollout status deployment/logto -n identity --timeout=300s
-kubectl rollout status deployment/hanko -n identity --timeout=180s
 kubectl rollout status deployment/cerbos -n identity --timeout=180s
+kubectl rollout status statefulset/identity-postgres -n identity --timeout=180s
 kubectl get deploy,sts,pvc -n mail
 kubectl get deploy,sts,pvc -n identity
 echo "identity-secrets still present:"

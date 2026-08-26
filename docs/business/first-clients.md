@@ -2,7 +2,7 @@
 
 **Canonical go-live plan** for Cronnecture: verified baseline → gaps → ordered actions → definition of done.
 
-**Verified:** 2026-08-22 (docs mount `stack/docs`, identity off master, two general workers). Prior passes 2026-08-11 / 2026-07-28 / 2026-07-26.  
+**Verified:** 2026-08-26 (docs vs live tree: Logto deleted, staging Supabase deleted, monitoring ns not deployed). Prior passes 2026-08-22 / 2026-08-11 / 2026-07-28 / 2026-07-26.  
 Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadmap.md). Product phases: [roadmap.md](../architecture/roadmap.md).
 
 ---
@@ -16,8 +16,8 @@ Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadma
 | k3s | `v1.35.4+k3s1` — `cp-master-01`, `worker-general-01`, `worker-general-02` (all Ready) |
 | Inventory | 1× `k3s_server`, 2× `compute_general`; `[siem]` empty (Wazuh retired); `edge_lb` / `compute_cpu` / `compute_memory` empty |
 | Control plane | `platform` ns, **2/2** Ready, image `control-plane:5332744-2693f09fb3d7`, UI cache buster **`?v=2.1.0`**, API **`0.34.0`**, memory limit **`10Gi`** (request `256Mi`), rollout `maxSurge:1` / `maxUnavailable:0` |
-| Staging | `platform-staging` 1/1 + NodePort **30081**; image `control-plane:6eb44ac-1bf77eeb92e1`; memory limit **`10Gi`**; `https://staging-ops.cronnecture.com` (Access) |
-| Monitoring | `monitoring` ns: Prometheus + Alertmanager + kube-state-metrics + node-exporter DaemonSet (3/3); **no Grafana** |
+| Staging | **Not deployed.** Previous Supabase project `cronnecture-staging` was deleted 2026-08-26. Recreate a project before `make deploy-staging`. |
+| Monitoring | Prometheus + Alertmanager + kube-state-metrics + 3/3 node-exporters (`make monitoring`, 2026-08-26). No Grafana. |
 | Registry | NodePort **30500**, storage **S3/R2** bucket `cronnecture-fleet-registry` (Basic auth required) |
 | Backups | Daily etcd + fleet; R2 sync to `s3://cronnecture-fleet-backups/fleet-backups/…`; restore drill **passed** (2026-07-28); break-glass on R2 `break-glass/latest/` + worker |
 | SIEM | Retired. `72.60.32.178` is `worker-general-02`. |
@@ -28,10 +28,10 @@ Long-horizon UI: [control-plane-roadmap.md](../architecture/control-plane-roadma
 |----------|------------|--------|
 | `ops.cronnecture.com` | Proxied (CF anycast) | Access → ops planes + `/login` |
 | `client.cronnecture.com` | Proxied | Path-scoped Access per portal UUID |
-| `staging-ops.cronnecture.com` | Proxied | Access |
+| `staging-ops.cronnecture.com` | May still resolve | Staging CP **not deployed** (Supabase project deleted 2026-08-26) |
 | `webmail.cronnecture.com` | Proxied | Access → webmail SPA (also `ops…/webmail`) |
 | `cronnecture.com` / `www` | Proxied | Marketing → Traefik → `cronnecture-website` |
-| `wazuh.cronnecture.com` | Proxied | Access |
+| `wazuh.cronnecture.com` | leftover | **SIEM retired** — do not treat as live |
 | `mail.cronnecture.com` | **A → `31.97.126.9`** | SMTP entry (not tunnel) |
 | `traefik.cronnecture.com` | **none** | `traefik_dashboard_enabled: false` |
 | `rancher.cronnecture.com` | **none** | `rancher_enabled: false` (cattle-* pods may still linger) |
@@ -83,7 +83,7 @@ Welcome, Infrastructure (Fleet: Topology · Cluster · Nodes · **Self-heal** ·
 |-----|-----|----------------|------------------|
 | ~~P0~~ | ~~DKIM TXT missing~~ | — | **Closed 2026-07-26** — `202607r` / `202607e` published; see §6 |
 | ~~P0~~ | ~~Gmail human roundtrip~~ | — | **Closed 2026-07-26** — user confirmed Gmail ↔ `info@` |
-| **P0** | **Single compute ingress** | All client Traefik/sites on `worker-general-01` | V-04 [resilience.md](../architecture/resilience.md) — **tunnel origin now `127.0.0.1` (replica-ready); still need 2nd VPS** |
+| **P0** | **Single k3s server / etcd + mail on control node** | Management + SMTP die together | V-02 / V-05 [resilience.md](../architecture/resilience.md). Two `compute_general` workers already exist. |
 | ~~P0~~ | ~~Go-live rehearsal on throwaway~~ | — | **Closed 2026-07-26** — `mvp-probe-20260726` dry-run + delete job **completed** |
 | ~~P1~~ | ~~Stripe enforcement drill~~ | — | **Closed 2026-07-26** — webhook ledger + dry-run reconcile + safe past_due UI observation (no site suspend); live Stripe `invoice.payment_failed` on real sub still optional |
 | ~~P1~~ | ~~Portal Access allowlists~~ | — | **Closed 2026-07-26** — user set emails; API `access_emails` non-empty for `decinemaat` |
@@ -125,7 +125,7 @@ All must be true:
 |---|-----------|--------------|
 | 1 | Platform readiness required items green | `GET /api/platform/readiness` → `required_ok == required_total` |
 | 2 | DKIM published + inbound/outbound mail pass spam filters once | Dig + Gmail roundtrip logged |
-| 3 | Customer portal opens for **customer** email via Access OTP | Login on `client.cronnecture.com/client/portal/{uuid}` |
+| 3 | Customer portal opens for **customer** email via Authentik OIDC | Login on `client.cronnecture.com/` (cookie `cp_logto_session`) |
 | 4 | Stripe checkout + webhook updates `billing_status` | Live or test mode with real webhook hits — **proved 2026-08-07** on `mvp-probe-20260807` (test mode; see §6a) |
 | 5 | Pay-needed UI on failure; site stays up until 90 days | Ops + customer portal banners |
 | 6 | Public site hostname serves app (Access policy intentional) | Browser / curl through Cloudflare |
@@ -144,9 +144,9 @@ All must be true:
 |-------|--------------|----------|
 | **Platform ops** | `ops.cronnecture.com` | Operators (Access + `/login`) |
 | **Platform mail UI** | `ops…/webmail` + `webmail.cronnecture.com` | Operators |
-| **Customer hub** | `client.cronnecture.com/client/portal/{uuid}` | Clients (Logto invite-only; Access off) |
+| **Customer hub** | `client.cronnecture.com/` | Clients (Authentik invite-only; Access off; cookie `cp_logto_session`) |
 | **Client sites** | Client zones → `client-{slug}` tunnel → Traefik | Public or Access per exposure |
-| **SIEM** | `wazuh.cronnecture.com` | Operators |
+| **SIEM** | retired | Do not page `wazuh.cronnecture.com` |
 | **Not a product** | `insights.*`, `portal.cronnecture.com`, `traefik.*` / `rancher.*` (disabled) | Absent or non-product |
 
 ---

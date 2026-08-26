@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 BTW_KINDS = ("standard", "reduced", "reverse_charge", "exempt", "unknown")
+VAT_ROLES = ("output", "input", "reverse_charge")
 
 REVERSE_CHARGE = re.compile(
     r"verleggingsregeling|heffing\s*verlegd|btw\s*verlegd|vat\s*verlegd|"
@@ -72,6 +73,25 @@ def infer_btw_kind(row: dict[str, Any]) -> str:
     if rate_i == 0 or foreign:
         return "exempt"
     return "unknown"
+
+
+def vat_role(row: dict[str, Any]) -> str | None:
+    kind = infer_btw_kind(row)
+    if kind == "reverse_charge":
+        return "reverse_charge"
+    existing = row.get("vatRole") or row.get("vat_role")
+    if existing in ("output", "input"):
+        return str(existing)
+    direction = row.get("direction")
+    side = row.get("side")
+    is_in = direction == "in" or side == "sales"
+    is_out = direction == "out" or side == "purchase"
+    if kind in ("standard", "reduced", "unknown"):
+        if is_in:
+            return "output"
+        if is_out:
+            return "input"
+    return None
 
 
 def extract_btw(text: str, *, currency: str = "EUR", net: float | None = None) -> dict[str, Any]:
@@ -146,6 +166,9 @@ def hydrate_row(row: dict[str, Any]) -> dict[str, Any]:
     next_row = dict(row)
     kind = infer_btw_kind(next_row)
     next_row["btwKind"] = kind
+    role = vat_role(next_row)
+    if role:
+        next_row["vatRole"] = role
     if kind == "reverse_charge":
         next_row["reverseCharge"] = True
         next_row["vatAmount"] = 0
@@ -196,4 +219,18 @@ def hydrate_ledger(state: dict[str, Any]) -> dict[str, Any]:
         next_state["invoices"] = [hydrate_row(item) if isinstance(item, dict) else item for item in invoices]
     if isinstance(entries, list):
         next_state["entries"] = [hydrate_row(item) if isinstance(item, dict) else item for item in entries]
+    invoices = next_state.get("invoices")
+    entries = next_state.get("entries")
+    if isinstance(invoices, list) and isinstance(entries, list):
+        in_ids = {
+            item.get("invoiceId")
+            for item in entries
+            if isinstance(item, dict) and item.get("direction") == "in" and item.get("invoiceId")
+        }
+        next_state["invoices"] = [
+            {**item, "vatRole": "output"}
+            if isinstance(item, dict) and item.get("id") in in_ids and item.get("vatRole") != "reverse_charge"
+            else item
+            for item in invoices
+        ]
     return next_state

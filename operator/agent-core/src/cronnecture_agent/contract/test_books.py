@@ -229,6 +229,49 @@ class BooksTests(unittest.TestCase):
         self.assertEqual(hydrated_entry["entries"][0]["btwKind"], "reverse_charge")
         self.assertTrue(hydrated_entry["entries"][0].get("reverseCharge"))
         self.assertEqual(hydrated_entry["entries"][0].get("aangifteVatAmount"), 6.53)
+        self.assertEqual(hydrated_entry["entries"][0].get("vatRole"), "reverse_charge")
+
+        sale = empty_ledger()
+        sale["entries"] = [
+            {
+                "id": "p-nd",
+                "direction": "in",
+                "amount": 145.18,
+                "vatRate": 21,
+                "vatAmount": 25.2,
+                "counterparty": "NoordDriveAutos",
+            }
+        ]
+        hydrated_sale = hydrate_ledger(sale)
+        self.assertEqual(hydrated_sale["entries"][0]["btwKind"], "standard")
+        self.assertEqual(hydrated_sale["entries"][0].get("vatRole"), "output")
+        self.assertNotEqual(hydrated_sale["entries"][0].get("vatRole"), "input")
+
+        tagged_purchase = empty_ledger()
+        tagged_purchase["invoices"] = [
+            {
+                "id": "inv-nd",
+                "side": "purchase",
+                "amountExcl": 120,
+                "vatRate": 21,
+                "vatAmount": 25.2,
+                "counterparty": "Stripe",
+            }
+        ]
+        tagged_purchase["entries"] = [
+            {
+                "id": "p-nd",
+                "direction": "in",
+                "amount": 145.18,
+                "vatRate": 21,
+                "vatAmount": 25.2,
+                "invoiceId": "inv-nd",
+                "counterparty": "NoordDriveAutos",
+            }
+        ]
+        hydrated_tagged = hydrate_ledger(tagged_purchase)
+        self.assertEqual(hydrated_tagged["entries"][0].get("vatRole"), "output")
+        self.assertEqual(hydrated_tagged["invoices"][0].get("vatRole"), "output")
 
 
 if __name__ == "__main__":

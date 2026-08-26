@@ -70,22 +70,3 @@ spec:
       services:
         - name: authentik
           port: 9000
----
-apiVersion: traefik.io/v1alpha1
-kind: IngressRoute
-metadata:
-  name: hanko
-  namespace: identity
-  labels:
-    cronnecture.com/managed-by: stack
-spec:
-  entryPoints:
-    - web
-  routes:
-    - match: Host(`passkeys.cronnecture.com`)
-      kind: Rule
-      middlewares:
-        - name: https-forwarded
-      services:
-        - name: hanko
-          port: 8000

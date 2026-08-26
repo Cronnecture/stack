@@ -8,7 +8,7 @@ All fleet Postgres databases run in **Supabase**, not in the k3s cluster.
 | Control plane — **staging** | Deferred — recreate a new project | Empty `vault_platform_database_url` until a new project exists. Old dump: `/home/dev/backups/db-cleanup-2026-08-26/cronnecture-staging-postgres.sql.gz` |
 | Identity (Authentik) | In-cluster `identity-postgres` DB `authentik` | Live host `identity-postgres` |
 | Identity (Vaultwarden) | Cloud project `cronnecture-identity` | Session pooler `:5432` |
-| Identity (Hanko) | In-cluster `identity-postgres` DB `hanko` | ConfigMap DSN |
+| Identity (Hanko) | In-cluster `identity-postgres` DB `hanko` (orphaned) | Retired 2026-08-26 |
 | Client apps (deployed via ops UI) | Supabase (per app or shared project) | `DATABASE_URL` in app deploy env |
 
 **Not on Supabase:** Passbolt CE (MariaDB) and Authentik Redis stay on-cluster in `identity` ns. Authentik Postgres is in-cluster `identity-postgres`. Vaultwarden uses project `cronnecture-identity`. Logto was retired 2026-08-26.
