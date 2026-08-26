@@ -189,13 +189,46 @@ class BooksTests(unittest.TestCase):
                 "vatRate": 0,
                 "vatAmount": 0,
                 "reverseCharge": True,
+                "btwKind": "reverse_charge",
+                "aangifteVatAmount": 6.53,
                 "currency": "USD",
             }
         ]
         hydrated_usd = hydrate_ledger(usd)
-        self.assertEqual(hydrated_usd["invoices"][0]["btwKind"], "exempt")
-        self.assertFalse(hydrated_usd["invoices"][0].get("reverseCharge"))
-        self.assertIsNone(hydrated_usd["invoices"][0].get("aangifteVatAmount"))
+        self.assertEqual(hydrated_usd["invoices"][0]["btwKind"], "reverse_charge")
+        self.assertTrue(hydrated_usd["invoices"][0].get("reverseCharge"))
+        self.assertEqual(hydrated_usd["invoices"][0].get("aangifteVatAmount"), 6.53)
+
+        usd_exempt = empty_ledger()
+        usd_exempt["invoices"] = [
+            {
+                "id": "gh2",
+                "amountExcl": 31.08,
+                "vatRate": 0,
+                "vatAmount": 0,
+                "currency": "USD",
+            }
+        ]
+        hydrated_exempt = hydrate_ledger(usd_exempt)
+        self.assertEqual(hydrated_exempt["invoices"][0]["btwKind"], "exempt")
+        self.assertFalse(hydrated_exempt["invoices"][0].get("reverseCharge"))
+        self.assertIsNone(hydrated_exempt["invoices"][0].get("aangifteVatAmount"))
+
+        usd_entry = empty_ledger()
+        usd_entry["entries"] = [
+            {
+                "id": "p-gh",
+                "amount": 31.08,
+                "vatRate": 0,
+                "vatAmount": 0,
+                "reverseCharge": True,
+                "currency": "USD",
+            }
+        ]
+        hydrated_entry = hydrate_ledger(usd_entry)
+        self.assertEqual(hydrated_entry["entries"][0]["btwKind"], "reverse_charge")
+        self.assertTrue(hydrated_entry["entries"][0].get("reverseCharge"))
+        self.assertEqual(hydrated_entry["entries"][0].get("aangifteVatAmount"), 6.53)
 
 
 if __name__ == "__main__":

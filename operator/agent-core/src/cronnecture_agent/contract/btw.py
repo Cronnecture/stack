@@ -54,11 +54,12 @@ def infer_btw_kind(row: dict[str, Any]) -> str:
     kind = row.get("btwKind") or row.get("btw_kind")
     currency = str(row.get("currency") or "EUR")
     foreign = currency != "EUR"
-    reverse = bool(row.get("reverseCharge") or row.get("reverse_charge"))
-    if kind in BTW_KINDS and not (kind == "reverse_charge" and foreign):
-        return str(kind)
-    if reverse and not foreign:
+    reverse = bool(row.get("reverseCharge") or row.get("reverse_charge") or kind == "reverse_charge")
+    # Operator reverse-charge (checkbox / saved kind) wins over USD/GBP auto-exempt.
+    if reverse:
         return "reverse_charge"
+    if kind in BTW_KINDS:
+        return str(kind)
     rate = row.get("vatRate") if row.get("vatRate") is not None else row.get("vat_rate")
     try:
         rate_i = int(rate)
