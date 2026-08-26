@@ -4,7 +4,6 @@
 #   identity-failsafe.sh status
 #   AUTHENTIK_REDIS_HOST=… AUTHENTIK_REDIS_PASSWORD=… [AUTHENTIK_REDIS_PORT=6379] [AUTHENTIK_REDIS_TLS=true] \
 #     identity-failsafe.sh apply-redis
-#   LOGTO_DATABASE_URL=postgres://… identity-failsafe.sh apply-logto
 #   identity-failsafe.sh scale-authentik --i-raised-the-pooler
 set -euo pipefail
 
@@ -13,17 +12,12 @@ KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 export KUBECONFIG
 NS=identity
 
-host_of() {
-  python3 -c 'import sys; u=sys.stdin.read().strip();
-print(u.split("@",1)[1].split("/",1)[0] if "@" in u else u or "none")'
-}
-
 cmd="${1:-status}"
 
 case "$cmd" in
   status)
     echo "=== replicas ==="
-    kubectl -n "$NS" get deploy authentik-server authentik-worker logto hanko cerbos identity-redis logto-postgres \
+    kubectl -n "$NS" get deploy authentik-server authentik-worker cerbos identity-redis \
       -o custom-columns='NAME:.metadata.name,READY:.status.readyReplicas,DESIRED:.spec.replicas' --no-headers
     echo
     echo "=== data plane (still SPOF if on a worker) ==="
@@ -31,11 +25,9 @@ case "$cmd" in
     kubectl -n "$NS" exec deploy/authentik-server -- printenv AUTHENTIK_REDIS__HOST 2>/dev/null || echo unavailable
     echo -n "authentik postgres: "
     kubectl -n "$NS" exec deploy/authentik-server -- printenv AUTHENTIK_POSTGRESQL__HOST 2>/dev/null || echo unavailable
-    echo -n "logto db: "
-    kubectl -n "$NS" exec deploy/logto -- printenv DB_URL 2>/dev/null | host_of || echo unavailable
     echo
     echo "=== placement ==="
-    kubectl -n "$NS" get pods -l 'app in (authentik-server,authentik-worker,logto,hanko,cerbos,identity-redis,logto-postgres)' \
+    kubectl -n "$NS" get pods -l 'app in (authentik-server,authentik-worker,cerbos,identity-redis)' \
       -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[0].ready,NODE:.spec.nodeName' --no-headers
     echo
     echo "Next operator clicks: docs/runbooks/identity-failsafe.md"
@@ -66,21 +58,6 @@ PY
     echo "Authentik Redis now ${host}"
     ;;
 
-  apply-logto)
-    url="${LOGTO_DATABASE_URL:-}"
-    test -n "$url" || { echo "set LOGTO_DATABASE_URL" >&2; exit 1; }
-    echo "Pointing Logto at $(printf '%s' "$url" | host_of)"
-    kubectl -n "$NS" patch secret identity-secrets --type merge -p "$(python3 - <<PY
-import base64, json, os
-def b(s): return base64.b64encode(s.encode()).decode()
-print(json.dumps({"data": {"postgres-dsn-logto": b(os.environ["LOGTO_DATABASE_URL"])}}))
-PY
-)"
-    kubectl -n "$NS" rollout restart deploy/logto
-    kubectl -n "$NS" rollout status deploy/logto --timeout=300s
-    echo "Logto DSN updated (in-cluster logto-postgres PVC left in place)"
-    ;;
-
   scale-authentik)
     if [[ "${2:-}" != "--i-raised-the-pooler" ]]; then
       echo "Refusing to scale Authentik. The session pooler is 15 clients;" >&2
@@ -93,8 +70,13 @@ PY
     kubectl -n "$NS" get pods -l app=authentik-server -o wide
     ;;
 
+  apply-logto)
+    echo "Logto is retired. Product SSO is Authentik. There is nothing to retarget." >&2
+    exit 2
+    ;;
+
   *)
-    echo "Usage: $0 status|apply-redis|apply-logto|scale-authentik" >&2
+    echo "Usage: $0 status|apply-redis|scale-authentik" >&2
     exit 1
     ;;
 esac

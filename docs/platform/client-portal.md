@@ -4,7 +4,7 @@ Authentik-gated customer hub at:
 
 `https://client.cronnecture.com/`
 
-Tenant is selected from the product OIDC session (`cp_logto_session` — historical cookie name), not from the URL. `portal_uuid` is still stored on the client row. Legacy `https://client.cronnecture.com/client/portal/{portal_uuid}` **302s** to `/`.
+Tenant is selected from the product OIDC session (`cp_oidc_session`; `cp_logto_session` still accepted), not from the URL. `portal_uuid` is still stored on the client row. Legacy `https://client.cronnecture.com/client/portal/{portal_uuid}` **302s** to `/`.
 
 The UI is the Next.js app [Cronnecture/client-portal](https://github.com/Cronnecture/client-portal). Backend contract: `GET /portal` (PortalSnapshot) and `POST /portal/actions`. See that repo’s `docs/INTEGRATION.md`.
 
@@ -25,7 +25,7 @@ Lightweight shell (`static/customer-portal/`) — **account / business only** (n
 
 **End-customer checkout (public):** `https://client.cronnecture.com/pay/{client-slug}` — branded page for the client’s buyers via their connected PSP. See [payment-providers.md](payment-providers.md).
 
-**UX note (2026-08):** Next.js client-portal. Portal HTML/APIs require **Authentik OIDC** (`cp_logto_session`); Cloudflare Access is not used on this hub. Checkout cancel returns to `/?billing=cancelled`. Stripe Customer Portal returns to `/billing/`.
+**UX note (2026-08):** Next.js client-portal. Portal HTML/APIs require **Authentik OIDC** (`cp_oidc_session`); Cloudflare Access is not used on this hub. Checkout cancel returns to `/?billing=cancelled`. Stripe Customer Portal returns to `/billing/`.
 
 **Self-serve in portal:** custom domain request · teammate allowlist invites · uptime page toggle · **pack checkout / prorated upgrade** · optional setup/website/webshop when Stripe one-time prices are configured.
 
@@ -44,10 +44,10 @@ This is **not** the old Insights extension marketplace. Do not advertise `insigh
 
 ## Access control
 
-- **Authentik OIDC** (TOTP) — **required** before portal HTML/APIs. Implementation: `logto_oidc.py` + cookie `cp_logto_session`. Logto cluster is gone.
+- **Authentik OIDC** (TOTP) — **required** before portal HTML/APIs. Implementation: `authentik_oidc.py` + cookie `cp_oidc_session` (`cp_logto_session` still accepted). Canonical login `/api/auth/oidc/login`.
 - Domain: `client.cronnecture.com` (Cloudflare Access **off** — `skip_access: true` + `purge_access_apps: true`; legacy path Access apps are stripped)
 - Path: `/client/portal/{portal_uuid}` (+ APIs under that prefix)
-- Unauthenticated HTML → `302` to `/api/auth/logto/login` → Authentik → callback sets `cp_logto_session` and binds `logto_sub` when the email is invited
+- Unauthenticated HTML → `302` to `/api/auth/oidc/login` → Authentik → callback sets `cp_oidc_session` and binds `logto_sub` when the email is invited
 - After OIDC, control plane checks email against the client allowlist (`portal_email_allowed`). Not invited → `/auth/not-invited` (not a raw OIDC error)
 - `GET /api/auth/home` routes a signed-in account to **their** portal (stub for a future marketing-site login)
 - Client emails: ops UI → **Settings → Users / Access** (client domain section) or CRM → client → **Portal** / Access tab / **Invite teammate**
@@ -58,19 +58,20 @@ This is **not** the old Insights extension marketplace. Do not advertise `insigh
 
 Ops/admin hosts stay on **CF Access → Authentik**. See [operator-access.md](../operations/operator-access.md).
 
-## Product SSO (Authentik; Logto names)
+## Product SSO (Authentik)
 
 | Piece | Detail |
 |-------|--------|
 | IdP | Authentik application for the customer portal |
-| Endpoint | `https://auth.cronnecture.com` (issuer via `AUTHENTIK_PORTAL_ISSUER` / fallback `LOGTO_ENDPOINT`) |
-| CP env | `AUTHENTIK_PORTAL_*` preferred; `LOGTO_*` still accepted |
-| Login | `GET https://client.cronnecture.com/api/auth/logto/login?return_to=…&portal_uuid=…` |
-| Callback | `GET https://client.cronnecture.com/api/auth/logto/callback` |
+| Endpoint | `https://auth.cronnecture.com` (`AUTHENTIK_PUBLIC_URL` / browser-reachable `AUTHENTIK_URL`) |
+| CP env | `AUTHENTIK_PORTAL_*` preferred; in-cluster `AUTHENTIK_INTERNAL_URL` for token/userinfo |
+| Login | `GET https://client.cronnecture.com/api/auth/oidc/login?return_to=…&portal_uuid=…` |
+| Callback | `GET https://client.cronnecture.com/api/auth/oidc/callback` |
+| Aliases | `/api/auth/logto/login` and `/api/auth/logto/callback` still 302 the same way |
 | Home (stub) | `GET https://client.cronnecture.com/api/auth/home` → their portal |
 | Not invited | `GET https://client.cronnecture.com/auth/not-invited` |
-| Session | HttpOnly cookie `cp_logto_session` |
-| Account link | `clients.contact_email` + `clients.logto_sub` |
+| Session | HttpOnly cookie `cp_oidc_session` (`cp_logto_session` still accepted) |
+| Account link | `clients.contact_email` + `clients.logto_sub` (column name is historical) |
 | Gate | Invite-only. **No public self-serve signup.** |
 
 Do **not** wire a new client app to `id.cronnecture.com` — Logto was deleted 2026-08-26.
@@ -81,7 +82,7 @@ Do **not** wire a new client app to `id.cronnecture.com` — Logto was deleted 2
 Internet → client.cronnecture.com (no Access on host)
   → node-tunnel → k3s_server:30080 (cf_portals.yml)
   → control-plane CustomerPortalMiddleware
-       → no cp_logto_session: 302 → Authentik sign-in (invited setup)
+       → no cp_oidc_session: 302 → Authentik sign-in (invited setup)
        → session + allowlist: bind logto_sub, portal HTML/APIs
        → session, not invited: 302 → /auth/not-invited
 ```

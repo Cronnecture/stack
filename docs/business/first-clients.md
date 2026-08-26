@@ -124,7 +124,7 @@ All must be true:
 |---|-----------|--------------|
 | 1 | Platform readiness required items green | `GET /api/platform/readiness` → `required_ok == required_total` |
 | 2 | DKIM published + inbound/outbound mail pass spam filters once | Dig + Gmail roundtrip logged |
-| 3 | Customer portal opens for **customer** email via Authentik OIDC | Login on `client.cronnecture.com/` (cookie `cp_logto_session`) |
+| 3 | Customer portal opens for **customer** email via Authentik OIDC | Login on `client.cronnecture.com/` (cookie `cp_oidc_session`) |
 | 4 | Stripe checkout + webhook updates `billing_status` | Live or test mode with real webhook hits — **proved 2026-08-07** on `mvp-probe-20260807` (test mode; see §6a) |
 | 5 | Pay-needed UI on failure; site stays up until 90 days | Ops + customer portal banners |
 | 6 | Public site hostname serves app (Access policy intentional) | Browser / curl through Cloudflare |
@@ -143,7 +143,7 @@ All must be true:
 |-------|--------------|----------|
 | **Platform ops** | `ops.cronnecture.com` | Operators (Access + `/login`) |
 | **Platform mail UI** | `ops…/webmail` + `webmail.cronnecture.com` | Operators |
-| **Customer hub** | `client.cronnecture.com/` | Clients (Authentik invite-only; Access off; cookie `cp_logto_session`) |
+| **Customer hub** | `client.cronnecture.com/` | Clients (Authentik invite-only; Access off; cookie `cp_oidc_session`) |
 | **Client sites** | Client zones → `client-{slug}` tunnel → Traefik | Public or Access per exposure |
 | **SIEM** | retired | Do not page `wazuh.cronnecture.com` |
 | **Not a product** | `insights.*`, `portal.cronnecture.com`, `traefik.*` / `rancher.*` (disabled) | Absent or non-product |

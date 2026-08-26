@@ -23,7 +23,7 @@ Internet
    │         └─ ssh-*.cronnecture.com  (type=ssh) ──► SSH CA short-lived cert
    │
    ├─ client.cronnecture.com (Access off) ──► Authentik product OIDC (invite-only)
-   │         cookie still named cp_logto_session
+   │         cookie cp_oidc_session (cp_logto_session still accepted)
    │
    └─ Public (no Access) ──► auth (Authentik) / vault (Vaultwarden)
                                       │
@@ -49,7 +49,7 @@ MFA: Authentik TOTP for ops and product.
 | **Vaultwarden** | `https://vault.cronnecture.com` | **No Cloudflare Access** (`skip_access`) | Ops password vault (Bitwarden clients); use **Send** for one-time secrets |
 | **Passbolt** | `https://passbolt.cronnecture.com` | Access → Authentik | Team credential sharing + audit |
 | **Authentik** | `https://auth.cronnecture.com` | Public | Admin/ops edge IdP **and** customer-portal OIDC (**2026.8.0**). **1 replica** on in-cluster `identity-postgres`. |
-| **Logto** | — | **Retired 2026-08-26** | Cluster objects deleted. Cookie `cp_logto_session` and `logto_oidc.py` remain as names. |
+| **Logto** | — | **Retired 2026-08-26** | Cluster objects deleted. `authentik_oidc.py` is the portal SSO client. Historical aliases: cookie `cp_logto_session`, path `/api/auth/logto/login`. |
 | **Logto Admin** | `https://id-admin.cronnecture.com` | leftover DNS | Do not treat as live product SSO. |
 | **Hanko** | — | **Retired 2026-08-26** | Cluster objects deleted. Orphan DB `hanko` may remain on identity-postgres until a PVC rebuild. |
 | **Cerbos** | `identity/cerbos:3592` | ClusterIP | Fine-grained AuthZ (ops policies shipped). **2 replicas**, required anti-affinity. |
@@ -118,7 +118,7 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 | Passbolt SMTP | Stalwart **:587** + `noreply@` (same secret). `:25` denies external relay — was the “Controleer je mailbox!” stall. |
 | Authentik OIDC `cloudflare-access` | **LIVE** for CF Access (`vault_authentik_cf_oidc_*`; fallback `.identity/authentik_cloudflare_oidc.env`) |
 | Authentik OIDC `logto-ciam` | Exists unused (future enterprise); **not** on Logto public SIE |
-| Cloudflare Access ← Authentik | **LIVE** on web + ssh-* (no email OTP). Customer portal is Authentik OIDC (`cp_logto_session`), not Access |
+| Cloudflare Access ← Authentik | **LIVE** on web + ssh-* (no email OTP). Customer portal is Authentik OIDC (`cp_oidc_session`), not Access |
 | Vaultwarden | Supabase DB; signups off; **`skip_access`**; prelogin/password **200** |
 | Passbolt | Access → Authentik; **browser extension + recovery kit still required** |
 | Logto | **Retired 2026-08-26** | Cluster objects gone; names linger in code |
@@ -134,7 +134,7 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 | Ops / staging-ops | **CF Access → Authentik → TOTP → ops dashboard** (no second password; session from Access email) |
 | Passbolt / webmail | **CF Access → Authentik → password → TOTP** |
 | Authentik admin | `https://auth.cronnecture.com` → password → TOTP enroll |
-| Product portal | `https://client.cronnecture.com` → Authentik OIDC (`/api/auth/logto/login`) → `cp_logto_session` |
+| Product portal | `https://client.cronnecture.com` → Authentik OIDC (`/api/auth/oidc/login`) → `cp_oidc_session` |
 | Logto Admin / `id.cronnecture.com` | **Retired** — do not send customers here |
 | Vaultwarden / Bitwarden apps | `https://vault.cronnecture.com` only (no CF Access) |
 | SSH | `cloudflared access ssh` → **CF Access → Authentik → TOTP** → **SSH CA** cert |
@@ -149,7 +149,7 @@ Accepted for current scale: survive without identity PITR. When adding VPS / HA 
 5. Enter 6-digit code — required on every later login  
 6. Change password after first successful MFA login  
 
-Logto is gone. Portal OIDC lives in `logto_oidc.py` talking to Authentik (`AUTHENTIK_PORTAL_*`, fallback `LOGTO_*`).
+Logto is gone. Portal OIDC lives in `authentik_oidc.py` (`AUTHENTIK_PORTAL_*`). Canonical login is `/api/auth/oidc/login` (cookie `cp_oidc_session`; `cp_logto_session` is still accepted).
 
 ### Bitwarden app (Vaultwarden)
 
@@ -169,18 +169,17 @@ Native Bitwarden clients cannot complete Cloudflare Access challenges → **`ski
    ./bin/cake passbolt send_test_email --recipient=svenbraad.work@gmail.com
    ```
 3. **Vaultwarden** — change master password after login (account intact on Supabase)  
-4. **Logto admin** — open `https://id-admin.cronnecture.com` (Access → Authentik) → sign in as `sven` → **enroll TOTP** if not already (MFA Mandatory). Password in `vault_logto_admin_password` (fallback `config/.identity/logto_admin_password`).  
-5. **Prefer vault** for bootstrap passwords; keep `.identity/` files as local DR fallback only. Do not commit them.  
-6. **Google → Logto** — connector is wired. **Do not rotate** the Google client secret unless an operator explicitly requests it (rotation is deferred). Confirm Console redirect URI below.  
+4. **Prefer vault** for bootstrap passwords; keep `.identity/` files as local DR fallback only. Do not commit them.  
+5. **Google → Authentik** — social login is on the Authentik portal application. **Do not rotate** the Google client secret unless an operator explicitly requests it.  
 7. **Revoke** any chat-pasted CF bootstrap tokens (if not already)  
 
-**Logto (done):** admin `sven`; connectors `smtp-stalwart` + `google` on public SIE; `authentik-oidc` connector row may remain but **not** on default SIE; MFA Mandatory on admin + default; Traditional app **Cronnecture customer portal** registered; CP OIDC bridge `/api/auth/logto/*` + portal **Sign in** button.
+Product SSO is Authentik (`authentik_oidc.py`). Canonical bridge: `/api/auth/oidc/login` → `/api/auth/oidc/callback` with cookie `cp_oidc_session`. `/api/auth/logto/*` and `cp_logto_session` remain aliases.
 
 **Later (with HA / more VPS — not urgent):** enable Supabase **PITR** on `cronnecture-identity` (or equivalent continuous recovery) when scaling per [RB-10](../runbooks/scale-to-ha.md). Do **not** enable paid PITR until that budget step.
 
 ### Google OIDC / Logto CIAM (retired 2026-08-26)
 
-Logto is gone. Do **not** point Google OAuth or new client apps at `id.cronnecture.com`. Product SSO is Authentik at `auth.cronnecture.com`. The control-plane bridge is still named `/api/auth/logto/login` → `/api/auth/oidc/callback` with cookie `cp_logto_session` — do not rename those without the freeze list.
+Logto is gone. Do **not** point Google OAuth or new client apps at `id.cronnecture.com`. Product SSO is Authentik at `auth.cronnecture.com`. Canonical bridge: `/api/auth/oidc/login` → `/api/auth/oidc/callback` with cookie `cp_oidc_session`. `/api/auth/logto/login` and `cp_logto_session` remain aliases.
 
 Customer hub: `client.cronnecture.com` (Access off, invite-only). Site-gate for NoordDrive is oauth2-proxy (`site-logto`) → Authentik; cookie `_site_logto`.  
 
@@ -193,7 +192,7 @@ Customer hub: `client.cronnecture.com` (Access off, invite-only). Site-gate for 
 | Role | `roles/identity_stack` |
 | Authentik image pin | `identity_authentik_image` → `2026.8.0` |
 | OIDC for CF | `vault_authentik_cf_oidc_*` (fallback `config/.identity/authentik_cloudflare_oidc.env`) |
-| OIDC for Logto (unused on public SIE) | `vault_authentik_logto_oidc_*` (fallback `config/.identity/authentik_logto_oidc.env`) |
+| OIDC leftover `logto-ciam` (unused) | `vault_authentik_logto_oidc_*` — not product SSO |
 | Team domain | `curly-frog-441a.cloudflareaccess.com` |
 | CF wire script | `scripts/cloudflare/cf-wire-authentik-idp.py` |
 | CF notes | `scripts/cloudflare/cf-authentik-access-notes.md` |

@@ -88,7 +88,7 @@ Ops UI: **Platform → Automations → Fleet backups → Cloudflare R2**.
 
 - Control-plane schema: `services/control-plane/schema.sql`
 - Re-register clients in the ops UI if DB is empty but cluster remains.
-- **Logto** is on-cluster `logto-postgres` (not this Supabase project) — see [identity.md](identity.md).
+- **Logto** was retired 2026-08-26 (not this Supabase project) — see [identity.md](identity.md).
 
 See [supabase.md](supabase.md) and [identity.md](identity.md). When scaling VPS/HA ([RB-10](../runbooks/scale-to-ha.md)), enable identity PITR (or equivalent) in the same wave.
 

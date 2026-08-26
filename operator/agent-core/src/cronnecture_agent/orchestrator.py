@@ -328,18 +328,7 @@ class AgentOrchestrator:
             )
             
             client_id = deployment_result["client_id"]
-            try:
-                from .logto import LogtoAdmin
-
-                logto = await LogtoAdmin().ensure_client_app(client_id, request_data["domain"])
-                deployment_result["logto"] = {
-                    k: v for k, v in logto.items() if k != "app_secret"
-                }
-                if logto.get("app_id"):
-                    await self.infrastructure_manager.annotate_logto_app(client_id, logto["app_id"])
-            except Exception as exc:
-                logger.warning("Logto app provision failed", client_id=client_id, error=str(exc))
-                deployment_result["logto"] = {"error": str(exc)}
+            deployment_result["oidc"] = {"provider": "authentik"}
 
             self.client_registry[client_id] = {
                 "name": request_data["client_name"],
@@ -367,7 +356,7 @@ class AgentOrchestrator:
                 "domain": request_data["domain"],
                 "access_url": deployment_result["access_url"],
                 "admin_credentials": deployment_result["admin_credentials"],
-                "logto": deployment_result.get("logto"),
+                "oidc": deployment_result.get("oidc"),
             }
             
         except Exception as e:
@@ -416,15 +405,7 @@ class AgentOrchestrator:
             )
 
     async def delete_client(self, client_id: str, confirm: str) -> Dict[str, Any]:
-        from .logto import LogtoAdmin
-
         result = await self.infrastructure_manager.delete_client(client_id, confirm)
-        logto_app_id = result.get("logto_app_id")
-        try:
-            logto = await LogtoAdmin().delete_client_app(logto_app_id, result["client_id"])
-            result["logto"] = logto
-        except Exception as exc:
-            logger.warning("Logto app delete failed", client_id=client_id, error=str(exc))
-            result["logto"] = {"error": str(exc)}
+        result["oidc"] = {"provider": "authentik", "remote_user_delete": "skipped"}
         self.client_registry.pop(result["client_id"], None)
         return result

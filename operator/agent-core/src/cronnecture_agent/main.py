@@ -197,7 +197,6 @@ async def mail_status():
 async def identity_status():
     data = await KeepSetController(_orch().infrastructure_manager).describe("identity")
     data["authentik"] = {"healthy": True, "role": "ops-and-portal"}
-    data["logto"] = {"removed": True, "healthy": True}
     return data
 
 

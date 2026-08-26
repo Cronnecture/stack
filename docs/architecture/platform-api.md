@@ -28,13 +28,13 @@ scripts. JS `POST /api/fleet/nodes` writes a 0600 password file under
 Operations and remove also enqueue host jobs.
 
 Still Python: leftover `/api/selfheal` (watchdog + event log), client delete, billing GET/checkout/reconcile, GitHub OAuth callback
-(not repo bootstrap), mail send/IMAP/create, previews, portal Logto, leftover
+(not repo bootstrap), mail send/IMAP/create, previews, portal Authentik OIDC, leftover
 dashboard HTML. GitHub/Kaniko deploy and tunnel expose are JS (`api-ops`).
 Python `JsCatalogGuardMiddleware` returns 501 `js_owned` for catalog-owned
 routes so a direct ClusterIP hit cannot dual-write.
 `/crm` redirects to the TSX clients workspace.
 Ops auth (`/api/auth/me`, login, access-login, logout) is JS and issues the
-same `ops_admin_session` cookie as Python. Authentik customer SSO stays Python (`logto_oidc.py`).
+same `ops_admin_session` cookie as Python. Authentik customer SSO stays Python (`authentik_oidc.py`).
 
 Rollback:
 

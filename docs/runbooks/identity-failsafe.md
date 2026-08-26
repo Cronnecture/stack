@@ -51,32 +51,7 @@ Leave the in-cluster Redis PVC in place. Do not delete it until Authentik has be
 
 Also store the Redis URL in the encrypted vault (`vault_authentik_redis_host` / password) so break-glass can rebuild it.
 
-### 3. Dedicated Postgres for Logto (direct host, not the identity pooler)
-
-Logto is already 2 pods. Its database is still `logto-postgres` on `worker-general-01`.
-
-Do **not** point Logto at the shared `cronnecture-identity` session pooler — Node/pg returned `ENOIDENTIFIER` there.
-
-1. New Supabase project, e.g. `cronnecture-logto`.
-2. Create an empty database named `logto` (or use `postgres`).
-3. Use the **direct** URI: `db.<ref>.supabase.co:5432` (not `*.pooler.supabase.com`).
-4. Dump and restore, then flip the secret:
-
-```bash
-# on cp-master-01 — dump does not print the DSN
-kubectl -n identity exec deploy/logto-postgres -- \
-  pg_dump -U postgres -d logto --no-owner --no-acl > /tmp/logto.sql
-# load /tmp/logto.sql into the new project (psql / SQL editor)
-# then:
-LOGTO_DATABASE_URL='postgresql://postgres.<ref>:…@db.<ref>.supabase.co:5432/logto?sslmode=require' \
-  ./scripts/identity-failsafe.sh apply-logto
-```
-
-Keep the `logto-postgres` PVC until the new URL has served traffic.
-
-Put the URI in vault as `vault_identity_database_url_logto`.
-
-### 4. Laptop Ansible control
+### 3. Laptop Ansible control
 
 On your laptop (once):
 
@@ -87,12 +62,13 @@ On your laptop (once):
 
 Refresh the pack after key rotation: `make break-glass` on the control node, then download it again.
 
-### 5. Do not
+### 4. Do not
 
 - Scale Authentik before step 1
 - Add a second k3s server (HA is 1→3 only)
 - `make identity` / retarget Authentik at in-cluster Postgres
-- Dual-replica Redis, `logto-postgres`, Vaultwarden, or Passbolt
+- Dual-replica Redis, Vaultwarden, or Passbolt
+- Restore Logto (`id.cronnecture.com`) — product SSO is Authentik
 
 ## Verify
 

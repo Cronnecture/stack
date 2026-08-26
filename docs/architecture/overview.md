@@ -135,7 +135,7 @@ ops.cronnecture.com  →  301 UI to control (APIs / webmail / portal stay)
 stack.cronnecture.com → 301 to control
 ```
 
-JS still owns catalog APIs: auth cookie, CRM writes, GitHub/Kaniko deploy, tunnel expose, jobs, fleet, mail list, public legal/handshake/contact, Stripe webhook HMAC. Python still owns customer portal + Authentik OIDC (`logto_oidc.py`), delete-client, billing GET/checkout, mail send/IMAP, GitHub OAuth callback, previews, self-heal events. GitHub OAuth callback bypasses Access (`/api/github/callback` on `ops.cronnecture.com`).
+JS still owns catalog APIs: auth cookie, CRM writes, GitHub/Kaniko deploy, tunnel expose, jobs, fleet, mail list, public legal/handshake/contact, Stripe webhook HMAC. Python still owns customer portal + Authentik OIDC (`authentik_oidc.py`), delete-client, billing GET/checkout, mail send/IMAP, GitHub OAuth callback, previews, self-heal events. GitHub OAuth callback bypasses Access (`/api/github/callback` on `ops.cronnecture.com`).
 
 ### Client: customer portal
 
@@ -144,7 +144,7 @@ Browser → client.cronnecture.com (Cloudflare Access off — skip_access)
        → node-tunnel → Traefik ClusterIP (Host client.cronnecture.com)
        → Next.js client-portal (pages)
        → GET /portal + POST /portal/actions on control-plane-legacy
-       → Authentik OIDC → cp_logto_session (cookie name is historical)
+       → Authentik OIDC → cp_oidc_session (cp_logto_session still accepted)
 ```
 
 Canonical URL is **https://client.cronnecture.com/** (tenant from the Authentik session). Legacy `/client/portal/{uuid}` redirects here. See [client-portal.md](../platform/client-portal.md).

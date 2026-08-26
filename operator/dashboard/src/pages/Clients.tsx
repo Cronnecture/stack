@@ -143,7 +143,7 @@ export default function Clients() {
           >
             <input name="name" placeholder="Display name" required />
             <input name="slug" placeholder="slug" required />
-            <input name="email" type="email" placeholder="Account email (Logto + billing)" required />
+            <input name="email" type="email" placeholder="Account email (Authentik + billing)" required />
             <label className="field">
               Pack
               <select name="pack" defaultValue="site_only">

@@ -21,12 +21,12 @@ export default function Identity() {
     <div>
       <PageHeader
         title="Identity"
-        lead="Authentik, Vaultwarden, Passbolt, and Cerbos. Hanko and Logto are retired. Secrets stay in-cluster. Restarts do not wipe data."
+        lead="Authentik, Vaultwarden, Passbolt, and Cerbos. Product and ops SSO is Authentik."
       />
       <div className="stats">
         <Stat value={data.healthy ? "Healthy" : "Check"} label="Identity" tone={data.healthy ? "ok" : "bad"} />
         <Stat value={data.secrets_present ? "Present" : "Missing"} label="Secrets" tone={data.secrets_present ? "ok" : "bad"} />
-        <Stat value={data.logto?.app_count ?? "—"} label="Logto apps" />
+        <Stat value={data.authentik?.healthy ? "Live" : "Check"} label="Authentik" tone={data.authentik?.healthy ? "ok" : "warn"} />
       </div>
       <Panel title="Workloads">
         <table>
@@ -70,30 +70,27 @@ export default function Identity() {
         </table>
       </Panel>
       <div className="layout two">
-        <Panel title="Logto">
+        <Panel title="Authentik">
           <table>
             <tbody>
               <tr>
-                <td>Management API</td>
-                <td className={data.logto?.configured ? "ok" : "warn"}>
-                  {data.logto?.configured ? "configured" : "not mounted"}
-                </td>
+                <td>Role</td>
+                <td>Ops (Cloudflare Access) and customer portal OIDC</td>
               </tr>
               <tr>
-                <td>OIDC issuer</td>
+                <td>Issuer</td>
                 <td>
-                  <code>{data.logto?.oidc?.issuer || "—"}</code>
+                  <code>https://auth.cronnecture.com/application/o/cronnecture-client-portal/</code>
                 </td>
               </tr>
               <tr>
-                <td>Authorization</td>
-                <td className={data.logto?.oidc?.https ? "ok" : "bad"}>
-                  <code>{data.logto?.oidc?.authorization_endpoint || "—"}</code>
+                <td>Login</td>
+                <td>
+                  <code>/api/auth/oidc/login</code>
                 </td>
               </tr>
             </tbody>
           </table>
-          {data.logto?.error && <p className="bad">{data.logto.error}</p>}
         </Panel>
         <Panel title="Storage">
           <table>

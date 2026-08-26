@@ -313,10 +313,23 @@ class ActionDispatcher:
     async def _tenant(self, atype: str, target: str, payload: dict[str, Any], job_id: str) -> dict[str, Any]:
         slug = payload.get("slug") or target
         if atype == "tenants.create":
-            code, body = await self.platform.post(
-                "/api/clients",
-                json={"slug": slug, "name": payload.get("name") or slug, "contact_email": payload.get("email")},
-            )
+            email = str(payload.get("email") or payload.get("contact_email") or "").strip()
+            domain = str(payload.get("domain") or "").strip() or None
+            pack = str(payload.get("pack") or "site_only").strip() or "site_only"
+            zone_mode = str(payload.get("zone_mode") or ("link" if domain else "skip")).strip() or "skip"
+            req_body: dict[str, Any] = {
+                "slug": slug,
+                "name": payload.get("name") or slug,
+                "contact_email": email or None,
+                "pack": pack,
+                "provision": True,
+                "zone_mode": zone_mode,
+            }
+            if email:
+                req_body["access_emails"] = [email]
+            if domain:
+                req_body["domain"] = domain
+            code, body = await self.platform.post("/api/clients", json=req_body)
         elif atype == "tenants.delete":
             code, body = await self.platform.delete(f"/api/clients/{slug}", params={"force": "false"})
         elif atype == "tenants.deploy":

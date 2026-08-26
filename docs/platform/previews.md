@@ -19,10 +19,10 @@ Example: `https://previews.cronnecture.com/previews/01936c2a-…`
 | Mode | Status |
 |------|--------|
 | **public** (default) | Preferred for demos — no login; listed on the Focus View hub when live |
-| `logto` | Traefik ForwardAuth → product Logto (same invite list as the customer portal). **No Cloudflare Access.** Hub listing is forced off. |
-| `access` | Path-scoped Cloudflare Access on `/previews/{uuid}` (+ `/*`) using the **ops** allowlist (Authentik). Hub listing is forced off. Prefer `logto` for client demos. |
+| `logto` | Historical auth_mode name. Traefik ForwardAuth → **Authentik** product SSO (same invite list as the customer portal). **No Cloudflare Access.** Hub listing is forced off. |
+| `access` | Path-scoped Cloudflare Access on `/previews/{uuid}` (+ `/*`) using the **ops** allowlist (Authentik). Hub listing is forced off. Prefer `logto` (Authentik) for client demos. |
 
-`PATCH /api/previews/{id}` with `{"auth_mode":"logto"}` (or `"access"`) gates that path and hides it from `GET /api/public/previews`. Teardown/purge removes the Access app and the Logto middleware.
+`PATCH /api/previews/{id}` with `{"auth_mode":"logto"}` (or `"access"`) gates that path and hides it from `GET /api/public/previews`. Teardown/purge removes the Access app and the Authentik ForwardAuth middleware.
 
 ## Fast path (60 seconds) — Ship preview
 

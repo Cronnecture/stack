@@ -95,7 +95,7 @@ Per-permission overrides can refine a role when needed.
 
 ## Client domain access
 
-- **Customer portal:** Authentik OIDC at `auth.cronnecture.com` (invite-only; cookie still `cp_logto_session`, login path still `/api/auth/logto/login`). Cloudflare Access is **off** on `client.cronnecture.com` (`skip_access` + `purge_access_apps`).
+- **Customer portal:** Authentik OIDC at `auth.cronnecture.com` (invite-only; cookie `cp_oidc_session`, login `/api/auth/oidc/login`). Cloudflare Access is **off** on `client.cronnecture.com` (`skip_access` + `purge_access_apps`).
 - **App domains:** exposures with `cf_access_enabled` — oversight on Users / Access; edit allowlists in CRM → client → Access.
 - Dev emails always merged via `PORTAL_DEV_EMAILS` for portals.
 - **Vaultwarden** stays `skip_access` (Bitwarden clients).

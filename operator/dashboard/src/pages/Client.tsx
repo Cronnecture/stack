@@ -86,7 +86,7 @@ export default function Client() {
         <Stat value={client.status} label="Status" tone={tone(client.status)} />
         <Stat value={portal.status || "none"} label="Portal" tone={portal.url ? "ok" : "warn"} />
         <Stat value={apps.length} label="Apps" />
-        <Stat value={client.logto_bound ? "Bound" : "Unbound"} label="Logto" tone={client.logto_bound ? "ok" : "warn"} />
+        <Stat value={client.oidc_bound || client.logto_bound ? "Bound" : "Unbound"} label="Authentik" tone={client.oidc_bound || client.logto_bound ? "ok" : "warn"} />
       </div>
       <div className="tabs">
         {TABS.map((name) => (
@@ -116,8 +116,8 @@ export default function Client() {
                   <td>{client.billing_status || "—"}</td>
                 </tr>
                 <tr>
-                  <td>Logto</td>
-                  <td>{client.logto_bound ? "bound" : "not bound"}</td>
+                  <td>Authentik</td>
+                  <td>{client.oidc_bound || client.logto_bound ? "bound" : "not bound"}</td>
                 </tr>
                 <tr>
                   <td>Status page</td>
@@ -213,7 +213,7 @@ export default function Client() {
             <p className="muted">
               Status {portal.status || "none"} · host {portal.hostname || "—"}
               <br />
-              Open portal uses your Authentik session on Control. Customers still sign in with Logto.
+              Open portal uses your Authentik session on Control. Customers sign in with Authentik OIDC.
             </p>
             <div className="actions">
               <button
@@ -225,7 +225,7 @@ export default function Client() {
               </button>
             </div>
           </Panel>
-          <Panel title="Logto allowlist">
+          <Panel title="Portal allowlist">
             <form
               className="stack"
               onSubmit={(e) => {
