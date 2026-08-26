@@ -7,5 +7,6 @@ tunnel_id: c698c546-91d8-44fc-b37a-a28d7f589080
 # Traefik ClusterIP — reachable from every cloudflared connector (all nodes).
 http_origin: http://10.43.125.134:80
 stack_hostname: stack.cronnecture.com
+operator_hostname: control.cronnecture.com
 mail_hostname: mail.cronnecture.com
 mail_a_record: 31.97.126.9

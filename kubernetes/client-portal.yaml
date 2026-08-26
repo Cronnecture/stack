@@ -1,0 +1,93 @@
+# Client Next.js portal + leftover Python for Logto, snapshot, pay, legal.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: client-portal
+  namespace: platform
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: client-portal
+  template:
+    metadata:
+      labels:
+        app: client-portal
+    spec:
+      # Local image is imported on workers; keep master as a last-resort schedule.
+      nodeSelector:
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - worker-general-01
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: client-portal
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: portal
+        image: cronnecture-client-portal:local
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: PORTAL_API_URL
+          value: "http://control-plane-legacy.platform.svc.cluster.local:8080"
+        - name: PORT
+          value: "3000"
+        - name: HOSTNAME
+          value: "0.0.0.0"
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        resources:
+          requests:
+            cpu: "2"
+            memory: 2Gi
+          limits:
+            cpu: "4"
+            memory: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: client-portal
+  namespace: platform
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  type: ClusterIP
+  selector:
+    app: client-portal
+  ports:
+  - name: http
+    port: 80
+    targetPort: http

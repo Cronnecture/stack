@@ -1,4 +1,5 @@
-# Live identity stack (Vaultwarden, Authentik, Logto, Passbolt, Hanko).
+# Live identity stack (Vaultwarden, Authentik, Passbolt, Hanko).
+# Logto cluster objects were deleted 2026-08-26 (cut over to Authentik).
 # Secret identity-secrets stays in-cluster only and is never written from git.
 # PVCs are never deleted.
 
@@ -11,6 +12,39 @@ metadata:
     cronnecture.io/role: identity
     pod-security.kubernetes.io/enforce: baseline
     cronnecture.com/managed-by: stack
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: identity-quota
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  hard:
+    requests.cpu: '16'
+    requests.memory: 32Gi
+    limits.cpu: '64'
+    limits.memory: 64Gi
+    pods: '50'
+    persistentvolumeclaims: '16'
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: identity-defaults
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 50m
+      memory: 64Mi
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -27,15 +61,11 @@ data:
 
     CREATE DATABASE authentik OWNER identity;
 
-    CREATE DATABASE logto OWNER identity;
-
     CREATE DATABASE hanko OWNER identity;
 
     GRANT ALL PRIVILEGES ON DATABASE vaultwarden TO identity;
 
     GRANT ALL PRIVILEGES ON DATABASE authentik TO identity;
-
-    GRANT ALL PRIVILEGES ON DATABASE logto TO identity;
 
     GRANT ALL PRIVILEGES ON DATABASE hanko TO identity;
 
@@ -138,11 +168,11 @@ spec:
           periodSeconds: 20
         resources:
           requests:
-            cpu: 100m
-            memory: 256Mi
-          limits:
             cpu: '1'
-            memory: 1Gi
+            memory: 2Gi
+          limits:
+            cpu: '4'
+            memory: 4Gi
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -224,11 +254,11 @@ spec:
           periodSeconds: 10
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
             cpu: 500m
-            memory: 256Mi
+            memory: 1Gi
+          limits:
+            cpu: '2'
+            memory: 2Gi
       volumes:
       - name: data
         persistentVolumeClaim:
@@ -375,6 +405,11 @@ metadata:
     cronnecture.com/managed-by: stack
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: authentik-server
@@ -393,13 +428,27 @@ spec:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
+        # Same node as identity-postgres: overlay RTT between workers is ~28ms
+        # per query vs <1ms on-node (cross-node was slower than nearby Supabase).
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: identity-postgres
+            topologyKey: kubernetes.io/hostname
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: authentik-server
+            topologyKey: kubernetes.io/hostname
       volumes:
       - name: authentik-email-ca
         configMap:
           name: authentik-email-ca
       containers:
       - name: server
-        image: ghcr.io/goauthentik/server:2026.5.6
+        image: ghcr.io/goauthentik/server:2026.8.0
         args:
         - server
         ports:
@@ -431,6 +480,10 @@ spec:
               key: authentik-bootstrap-password
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: 'false'
+        - name: AUTHENTIK_HOST
+          value: https://auth.cronnecture.com
+        - name: AUTHENTIK_WEB__BASE_URL
+          value: https://auth.cronnecture.com
         - name: AUTHENTIK_EMAIL__HOST
           value: stalwart.mail.svc.cluster.local
         - name: AUTHENTIK_EMAIL__PORT
@@ -450,31 +503,56 @@ spec:
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-host
+              key: authentik-postgres-host
         - name: AUTHENTIK_POSTGRESQL__PORT
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-port
+              key: authentik-postgres-port
         - name: AUTHENTIK_POSTGRESQL__USER
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-user
+              key: authentik-postgres-user
         - name: AUTHENTIK_POSTGRESQL__NAME
           value: authentik
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-password
+              key: authentik-postgres-password
         - name: AUTHENTIK_POSTGRESQL__SSLMODE
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-sslmode
+              key: authentik-postgres-sslmode
+        # Local identity-postgres (not Supabase session pooler). Gunicorn 1x2
+        # starved the login SPA (HTML + CSS/JS + flow APIs) and uptime probes,
+        # which is what made tenant sites feel like ~7s. Persistent connections
+        # are safe here; do not set CONN_MAX_AGE=0 (that was for PgBouncer).
+        - name: AUTHENTIK_WEB__WORKERS
+          value: '2'
+        - name: AUTHENTIK_WEB__THREADS
+          value: '4'
+        - name: AUTHENTIK_POSTGRESQL__CONN_MAX_AGE
+          value: '60'
+        - name: AUTHENTIK_OUTPOSTS__DISABLE_EMBEDDED_OUTPOST
+          value: 'true'
         - name: AUTHENTIK_REDIS__HOST
-          value: identity-redis
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-redis-host
+        - name: AUTHENTIK_REDIS__PORT
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-redis-port
+        - name: AUTHENTIK_REDIS__TLS
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-redis-tls
         - name: AUTHENTIK_REDIS__PASSWORD
           valueFrom:
             secretKeyRef:
@@ -484,21 +562,24 @@ spec:
           httpGet:
             path: /-/health/ready/
             port: http
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 8
         livenessProbe:
           httpGet:
             path: /-/health/live/
             port: http
-          initialDelaySeconds: 60
+          initialDelaySeconds: 90
           periodSeconds: 30
+          timeoutSeconds: 5
         resources:
           requests:
-            cpu: 100m
-            memory: 512Mi
-          limits:
             cpu: '1'
-            memory: 1536Mi
+            memory: 3Gi
+          limits:
+            cpu: '6'
+            memory: 8Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -510,6 +591,11 @@ metadata:
     cronnecture.com/managed-by: stack
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: authentik-worker
@@ -528,13 +614,19 @@ spec:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: authentik-worker
+            topologyKey: kubernetes.io/hostname
       volumes:
       - name: authentik-email-ca
         configMap:
           name: authentik-email-ca
       containers:
       - name: worker
-        image: ghcr.io/goauthentik/server:2026.5.6
+        image: ghcr.io/goauthentik/server:2026.8.0
         args:
         - worker
         volumeMounts:
@@ -551,6 +643,10 @@ spec:
               key: authentik-secret-key
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: 'false'
+        - name: AUTHENTIK_HOST
+          value: https://auth.cronnecture.com
+        - name: AUTHENTIK_WEB__BASE_URL
+          value: https://auth.cronnecture.com
         - name: AUTHENTIK_EMAIL__HOST
           value: stalwart.mail.svc.cluster.local
         - name: AUTHENTIK_EMAIL__PORT
@@ -570,31 +666,50 @@ spec:
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-host
+              key: authentik-postgres-host
         - name: AUTHENTIK_POSTGRESQL__PORT
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-port
+              key: authentik-postgres-port
         - name: AUTHENTIK_POSTGRESQL__USER
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-user
+              key: authentik-postgres-user
         - name: AUTHENTIK_POSTGRESQL__NAME
           value: authentik
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-password
+              key: authentik-postgres-password
         - name: AUTHENTIK_POSTGRESQL__SSLMODE
           valueFrom:
             secretKeyRef:
               name: identity-secrets
-              key: postgres-sslmode
+              key: authentik-postgres-sslmode
+        - name: AUTHENTIK_WORKER__PROCESSES
+          value: '1'
+        - name: AUTHENTIK_WORKER__THREADS
+          value: '4'
+        - name: AUTHENTIK_POSTGRESQL__CONN_MAX_AGE
+          value: '60'
         - name: AUTHENTIK_REDIS__HOST
-          value: identity-redis
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-redis-host
+        - name: AUTHENTIK_REDIS__PORT
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-redis-port
+        - name: AUTHENTIK_REDIS__TLS
+          valueFrom:
+            secretKeyRef:
+              name: identity-secrets
+              key: authentik-redis-tls
         - name: AUTHENTIK_REDIS__PASSWORD
           valueFrom:
             secretKeyRef:
@@ -602,11 +717,11 @@ spec:
               key: redis-password
         resources:
           requests:
-            cpu: 50m
-            memory: 256Mi
-          limits:
             cpu: '1'
-            memory: 1Gi
+            memory: 2Gi
+          limits:
+            cpu: '4'
+            memory: 4Gi
 ---
 apiVersion: v1
 kind: Service
@@ -902,111 +1017,6 @@ spec:
     port: 80
     targetPort: http
 ---
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: logto
-  namespace: identity
-  labels:
-    app: logto
-    cronnecture.com/managed-by: stack
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: logto
-  template:
-    metadata:
-      labels:
-        app: logto
-    spec:
-      nodeSelector:
-        pool: general
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            preference:
-              matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-      containers:
-      - name: logto
-        image: ghcr.io/logto-io/logto:latest
-        command:
-        - sh
-        - -c
-        args:
-        - 'set -e
-
-          # Matches upstream docker-compose entrypoint.
-
-          npm run cli db seed -- --swe
-
-          npm start
-
-          '
-        ports:
-        - name: core
-          containerPort: 3001
-        - name: admin
-          containerPort: 3002
-        env:
-        - name: TRUST_PROXY_HEADER
-          value: '1'
-        - name: DB_URL
-          valueFrom:
-            secretKeyRef:
-              name: identity-secrets
-              key: postgres-dsn-logto
-        - name: ENDPOINT
-          value: https://id.cronnecture.com
-        - name: ADMIN_ENDPOINT
-          value: https://id-admin.cronnecture.com
-        - name: NODE_OPTIONS
-          value: --max-old-space-size=768
-        readinessProbe:
-          httpGet:
-            path: /api/status
-            port: core
-          initialDelaySeconds: 60
-          periodSeconds: 15
-          timeoutSeconds: 5
-          failureThreshold: 18
-        livenessProbe:
-          httpGet:
-            path: /api/status
-            port: core
-          initialDelaySeconds: 120
-          periodSeconds: 30
-          timeoutSeconds: 5
-        resources:
-          requests:
-            cpu: 200m
-            memory: 512Mi
-          limits:
-            cpu: '1'
-            memory: 1Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: logto
-  namespace: identity
-  labels:
-    cronnecture.com/managed-by: stack
-spec:
-  type: ClusterIP
-  selector:
-    app: logto
-  ports:
-  - name: core
-    port: 3001
-    targetPort: core
-  - name: admin
-    port: 3002
-    targetPort: admin
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1039,7 +1049,12 @@ metadata:
     app: hanko
     cronnecture.com/managed-by: stack
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: hanko
@@ -1058,6 +1073,12 @@ spec:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: hanko
+            topologyKey: kubernetes.io/hostname
       initContainers:
       - name: migrate
         image: ghcr.io/teamhanko/hanko:v2.7.0
@@ -1066,6 +1087,13 @@ spec:
         - up
         - --config
         - /etc/config/config.yaml
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
         volumeMounts:
         - name: config
           mountPath: /etc/config
@@ -1099,11 +1127,11 @@ spec:
           periodSeconds: 20
         resources:
           requests:
-            cpu: 50m
-            memory: 128Mi
+            cpu: 200m
+            memory: 256Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: '1'
+            memory: 1Gi
       volumes:
       - name: config
         configMap:
@@ -1142,133 +1170,48 @@ spec:
   egress:
   - {}
 
-# logto-postgres was live beside the addon; now owned by this stack
+# Authentik is on in-cluster identity-postgres (migrated off Supabase so
+# gunicorn can scale without pool_size 15). Vaultwarden remains on the
+# Supabase DSN pinned in identity-secrets. Logto is retired.
+# scripts/sync-identity-db-secrets.py pins secrets to whatever the live
+# pods actually use — do not point Vaultwarden at an empty local DB.
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
+# Login frontends are 2 replicas / anti-affinity. Data PVCs stay 1.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
 metadata:
-  annotations:
-    pv.kubernetes.io/bind-completed: 'yes'
-    pv.kubernetes.io/bound-by-controller: 'yes'
-    volume.beta.kubernetes.io/storage-provisioner: rancher.io/local-path
-    volume.kubernetes.io/selected-node: worker-general-01
-    volume.kubernetes.io/storage-provisioner: rancher.io/local-path
-  finalizers:
-  - kubernetes.io/pvc-protection
-  name: logto-postgres
+  name: authentik-server
   namespace: identity
   labels:
     cronnecture.com/managed-by: stack
 spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
-  storageClassName: local-path
-  volumeMode: Filesystem
-  volumeName: pvc-e31a7a78-f5b9-4847-90e0-63fd515b6fcb
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app: logto-postgres
-    cronnecture.com/managed-by: stack
-  name: logto-postgres
-  namespace: identity
-spec:
-  progressDeadlineSeconds: 600
-  replicas: 1
-  revisionHistoryLimit: 10
+  minAvailable: 1
   selector:
     matchLabels:
-      app: logto-postgres
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app: logto-postgres
-    spec:
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - preference:
-              matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-            weight: 100
-      containers:
-      - env:
-        - name: POSTGRES_PASSWORD
-          value: H1BcGgB0HetZtltUW040cFmLtefdKbxe
-        - name: POSTGRES_USER
-          value: postgres
-        - name: PGDATA
-          value: /var/lib/postgresql/data/pgdata
-        image: postgres:16-alpine
-        imagePullPolicy: IfNotPresent
-        name: postgres
-        ports:
-        - containerPort: 5432
-          name: pg
-          protocol: TCP
-        readinessProbe:
-          exec:
-            command:
-            - pg_isready
-            - -U
-            - postgres
-          failureThreshold: 3
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          successThreshold: 1
-          timeoutSeconds: 1
-        resources:
-          limits:
-            cpu: '1'
-            memory: 1Gi
-          requests:
-            cpu: 100m
-            memory: 256Mi
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-        volumeMounts:
-        - mountPath: /var/lib/postgresql/data
-          name: data
-        - mountPath: /docker-entrypoint-initdb.d
-          name: init
-          readOnly: true
-      dnsPolicy: ClusterFirst
-      nodeSelector:
-        pool: general
-      restartPolicy: Always
-      schedulerName: default-scheduler
-      securityContext: {}
-      terminationGracePeriodSeconds: 30
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: logto-postgres
-      - configMap:
-          defaultMode: 420
-          name: logto-postgres-init
-        name: init
+      app: authentik-server
 ---
-apiVersion: v1
-kind: Service
+apiVersion: policy/v1
+kind: PodDisruptionBudget
 metadata:
-  name: logto-postgres
+  name: authentik-worker
   namespace: identity
   labels:
     cronnecture.com/managed-by: stack
 spec:
-  ports:
-  - name: pg
-    port: 5432
-    protocol: TCP
-    targetPort: pg
+  minAvailable: 1
   selector:
-    app: logto-postgres
-  type: ClusterIP
+    matchLabels:
+      app: authentik-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hanko
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: hanko

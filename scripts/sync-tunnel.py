@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point node-tunnel HTTP origins at Traefik ClusterIP and add stack.cronnecture.com.
+"""Point node-tunnel HTTP origins at Traefik ClusterIP and add operator hostnames.
 
 Preserves SSH and Wazuh routes. Uses Ansible vault tokens. Does not print secrets.
 """
@@ -10,18 +10,18 @@ import json
 import subprocess
 import sys
 import urllib.request
+from pathlib import Path
 
-VAULT = "/home/dev/ansible/config/inventory/group_vars/all/vault.yml"
-PASS = "/home/dev/.ansible/vault_pass"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from stack_paths import vault_file, vault_pass_file
+
+VAULT = str(vault_file())
+PASS = str(vault_pass_file())
 HTTP_ORIGIN = "http://10.43.125.134:80"
+CONTROL_HOST = "control.cronnecture.com"
 STACK_HOST = "stack.cronnecture.com"
 TUNNEL_NAME = "node-tunnel"
-
-REWRITE_PREFIXES = (
-    "http://31.97.126.9:30",
-    "http://31.97.126.9:301",
-    "http://135.181.58.45:80",
-)
+OPERATOR_HOSTS = (CONTROL_HOST, STACK_HOST)
 
 
 def vault_values() -> dict[str, str]:
@@ -64,6 +64,113 @@ def rewrite_service(service: str) -> str:
     return service
 
 
+def ensure_dns(dns_tok: str, zone: str, hostname: str, target: str) -> None:
+    records = cf(
+        f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records?type=CNAME&name={hostname}",
+        dns_tok,
+    )
+    existing = records.get("result") or []
+    body = {
+        "type": "CNAME",
+        "name": hostname,
+        "content": target,
+        "proxied": True,
+        "ttl": 1,
+    }
+    if existing:
+        rid = existing[0]["id"]
+        cf(
+            f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records/{rid}",
+            dns_tok,
+            method="PUT",
+            data=body,
+        )
+        print("dns updated", hostname)
+    else:
+        cf(
+            f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records",
+            dns_tok,
+            method="POST",
+            data=body,
+        )
+        print("dns created", hostname)
+
+
+def ensure_access(vals: dict[str, str]) -> None:
+    token = vals.get("vault_cf_access_token") or ""
+    acct = vals["vault_cf_account_id"]
+    if not token:
+        print("access token missing; skip Zero Trust app for", CONTROL_HOST)
+        return
+    try:
+        apps = cf(
+            f"https://api.cloudflare.com/client/v4/accounts/{acct}/access/apps?per_page=100",
+            token,
+        )
+    except Exception as exc:
+        print("access list failed:", type(exc).__name__)
+        return
+    ops_app = None
+    control_app = None
+    for app in apps.get("result") or []:
+        domains = []
+        if app.get("domain"):
+            domains.append(app["domain"])
+        for item in app.get("self_hosted_domains") or []:
+            if isinstance(item, str):
+                domains.append(item)
+            elif isinstance(item, dict):
+                domains.append(item.get("self_hosted_domain") or item.get("domain") or "")
+        if "ops.cronnecture.com" in domains:
+            ops_app = app
+        if CONTROL_HOST in domains:
+            control_app = app
+    if control_app:
+        print("access kept", CONTROL_HOST)
+        return
+    if not ops_app:
+        print("no ops Access app to clone")
+        return
+    payload = {
+        "name": "Cronnecture Control",
+        "domain": CONTROL_HOST,
+        "type": ops_app.get("type") or "self_hosted",
+        "session_duration": ops_app.get("session_duration") or "8h",
+        "auto_redirect_to_identity": bool(ops_app.get("auto_redirect_to_identity", True)),
+        "allowed_idps": ops_app.get("allowed_idps") or [],
+        "app_launcher_visible": True,
+    }
+    created = cf(
+        f"https://api.cloudflare.com/client/v4/accounts/{acct}/access/apps",
+        token,
+        method="POST",
+        data=payload,
+    )
+    new_id = (created.get("result") or {}).get("id")
+    print("access app created", CONTROL_HOST)
+    if not new_id:
+        return
+    policies = cf(
+        f"https://api.cloudflare.com/client/v4/accounts/{acct}/access/apps/{ops_app['id']}/policies",
+        token,
+    )
+    for pol in policies.get("result") or []:
+        body = {
+            "name": pol.get("name") or "Allow operators",
+            "decision": pol.get("decision") or "allow",
+            "include": pol.get("include") or [],
+            "exclude": pol.get("exclude") or [],
+            "require": pol.get("require") or [],
+        }
+        cf(
+            f"https://api.cloudflare.com/client/v4/accounts/{acct}/access/apps/{new_id}/policies",
+            token,
+            method="POST",
+            data=body,
+        )
+    print("access policies copied")
+
+
 def main() -> int:
     vals = vault_values()
     acct = vals["vault_cf_account_id"]
@@ -95,11 +202,12 @@ def main() -> int:
         kept.append(rule)
         hosts.add(rule["hostname"])
 
-    if STACK_HOST not in hosts:
-        kept.append({"hostname": STACK_HOST, "service": HTTP_ORIGIN})
-        print(f"added {STACK_HOST}")
-    else:
-        print(f"kept {STACK_HOST}")
+    for host in OPERATOR_HOSTS:
+        if host not in hosts:
+            kept.append({"hostname": host, "service": HTTP_ORIGIN})
+            print(f"added {host}")
+        else:
+            print(f"kept {host}")
 
     if catch_all is None:
         catch_all = {"service": "http_status:404"}
@@ -117,36 +225,11 @@ def main() -> int:
     )
     print("tunnel configuration updated", put.get("success"))
 
-    records = cf(
-        f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records?type=CNAME&name={STACK_HOST}",
-        dns_tok,
-    )
     target = f"{tid}.cfargotunnel.com"
-    existing = records.get("result") or []
-    body = {
-        "type": "CNAME",
-        "name": STACK_HOST,
-        "content": target,
-        "proxied": True,
-        "ttl": 1,
-    }
-    if existing:
-        rid = existing[0]["id"]
-        cf(
-            f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records/{rid}",
-            dns_tok,
-            method="PUT",
-            data=body,
-        )
-        print("dns updated", STACK_HOST)
-    else:
-        cf(
-            f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records",
-            dns_tok,
-            method="POST",
-            data=body,
-        )
-        print("dns created", STACK_HOST)
+    for host in OPERATOR_HOSTS:
+        ensure_dns(dns_tok, zone, host, target)
+
+    ensure_access(vals)
     return 0
 
 

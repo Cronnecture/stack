@@ -68,6 +68,11 @@ metadata:
     cronnecture.com/managed-by: stack
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: cerbos
@@ -86,6 +91,12 @@ spec:
               matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: cerbos
+            topologyKey: kubernetes.io/hostname
       containers:
       - name: cerbos
         image: ghcr.io/cerbos/cerbos:0.43.0
@@ -118,11 +129,11 @@ spec:
           periodSeconds: 20
         resources:
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
           limits:
-            cpu: 500m
-            memory: 256Mi
+            cpu: '1'
+            memory: 512Mi
       volumes:
       - name: config
         configMap:
@@ -149,3 +160,16 @@ spec:
   - name: grpc
     port: 3593
     targetPort: grpc
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cerbos
+  namespace: identity
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: cerbos

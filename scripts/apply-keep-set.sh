@@ -15,8 +15,11 @@ MANIFESTS=/var/lib/rancher/k3s/server/manifests
 echo "Checking live mail/identity data..."
 kubectl get ns mail identity >/dev/null
 kubectl get secret identity-secrets -n identity >/dev/null
+echo "Pinning identity-secrets to the databases the live pods actually use..."
+python3 "$ROOT/scripts/sync-identity-db-secrets.py"
+
 kubectl get pvc stalwart-data -n mail >/dev/null
-for pvc in identity-postgres identity-redis vaultwarden-data passbolt-mariadb passbolt-data passbolt-jwt logto-postgres; do
+for pvc in identity-postgres identity-redis vaultwarden-data passbolt-mariadb passbolt-data passbolt-jwt; do
   kubectl get pvc "$pvc" -n identity >/dev/null
 done
 
@@ -41,6 +44,11 @@ kubectl apply -f "$ROOT/kubernetes/identity-ingress.yaml"
 echo "Waiting for mail + identity..."
 kubectl rollout status deployment/stalwart -n mail --timeout=180s
 kubectl rollout status deployment/vaultwarden -n identity --timeout=180s
+kubectl rollout status deployment/authentik-server -n identity --timeout=300s
+kubectl rollout status deployment/authentik-worker -n identity --timeout=300s
+kubectl rollout status deployment/logto -n identity --timeout=300s
+kubectl rollout status deployment/hanko -n identity --timeout=180s
+kubectl rollout status deployment/cerbos -n identity --timeout=180s
 kubectl get deploy,sts,pvc -n mail
 kubectl get deploy,sts,pvc -n identity
 echo "identity-secrets still present:"

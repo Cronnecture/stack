@@ -28,7 +28,6 @@ owned_by_stack:
       - passbolt-mariadb
       - passbolt-data
       - passbolt-jwt
-      - logto-postgres
 protected_domains:
   - cronnecture.com
   - www.cronnecture.com
@@ -45,6 +44,7 @@ protected_domains:
   - passkeys.cronnecture.com
   - auth.cronnecture.com
   - stack.cronnecture.com
+  - control.cronnecture.com
 public_ports:
   mail:
     - 25/tcp

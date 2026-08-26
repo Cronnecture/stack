@@ -18,17 +18,29 @@ metadata:
   name: cronnecture-agent-core
 rules:
 - apiGroups: [""]
-  resources: ["pods", "nodes", "namespaces", "services", "configmaps", "endpoints", "persistentvolumeclaims", "secrets"]
+  resources: ["pods", "nodes", "namespaces", "services", "configmaps", "endpoints", "persistentvolumeclaims", "secrets", "events", "resourcequotas"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
-  resources: ["namespaces", "services", "configmaps"]
-  verbs: ["create", "update", "patch"]
+  resources: ["pods"]
+  verbs: ["delete"]
+- apiGroups: [""]
+  resources: ["namespaces", "services", "configmaps", "resourcequotas"]
+  verbs: ["create", "update", "patch", "delete"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["traefik.io"]
   resources: ["ingressroutes"]
-  verbs: ["get", "list", "watch", "create", "update", "patch"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["cert-manager.io"]
+  resources: ["certificates"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -89,7 +101,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: cloudflare
-              key: tunnel_token
+              key: readonly_token
               optional: true
         - name: CLOUDFLARE_TUNNEL_ID
           valueFrom:
@@ -99,6 +111,58 @@ spec:
               optional: true
         - name: CLOUDFLARE_HTTP_ORIGIN
           value: "http://10.43.125.134:80"
+        - name: KEEP_CLIENT_NAMESPACES
+          value: "client-noorddriveautos"
+        - name: PLATFORM_API
+          value: "http://control-plane.platform.svc.cluster.local:8080"
+        - name: OPS_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: platform-api
+              key: OPS_API_TOKEN
+              optional: true
+        - name: BOOKS_FILES_DIR
+          value: /var/lib/cronnecture/books
+        - name: BOOKS_S3_PREFIX
+          value: operator-books
+        - name: BOOKS_S3_ENV_FILE
+          value: /etc/cronnecture/backup-r2.env
+        - name: BOOKS_S3_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: operator-books-r2
+              key: AWS_ACCESS_KEY_ID
+              optional: true
+        - name: BOOKS_S3_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: operator-books-r2
+              key: AWS_SECRET_ACCESS_KEY
+              optional: true
+        - name: BOOKS_S3_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: operator-books-r2
+              key: BUCKET
+              optional: true
+        - name: BOOKS_S3_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: operator-books-r2
+              key: ENDPOINT
+              optional: true
+        - name: BOOKS_S3_REGION
+          valueFrom:
+            secretKeyRef:
+              name: operator-books-r2
+              key: AWS_DEFAULT_REGION
+              optional: true
+        volumeMounts:
+        - name: operator-books
+          mountPath: /var/lib/cronnecture/books
+        - name: backup-r2-env
+          mountPath: /etc/cronnecture/backup-r2.env
+          readOnly: true
         readinessProbe:
           httpGet:
             path: /health
@@ -107,11 +171,20 @@ spec:
           periodSeconds: 10
         resources:
           requests:
-            cpu: 50m
-            memory: 128Mi
+            cpu: 250m
+            memory: 256Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            cpu: "1"
+            memory: 1Gi
+      volumes:
+      - name: operator-books
+        hostPath:
+          path: /var/lib/cronnecture/books
+          type: DirectoryOrCreate
+      - name: backup-r2-env
+        hostPath:
+          path: /etc/cronnecture/backup-r2.env
+          type: File
 ---
 apiVersion: v1
 kind: Service
@@ -133,7 +206,7 @@ metadata:
   name: dashboard
   namespace: cronnecture-system
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: dashboard
@@ -143,31 +216,50 @@ spec:
         app: dashboard
     spec:
       nodeSelector:
-        kubernetes.io/hostname: cp-master-01
+        pool: general
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - worker-general-01
       tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
         effect: NoSchedule
       containers:
       - name: dashboard
-        image: cronnecture-dashboard:local
+        image: cronnecture-control-portal:local
         imagePullPolicy: Never
         ports:
-        - containerPort: 80
+        - containerPort: 3000
           name: http
+        env:
+        - name: CONTROL_API_URL
+          value: "http://agent-core.cronnecture-system.svc.cluster.local:8000"
+        - name: PORT
+          value: "3000"
+        - name: HOSTNAME
+          value: "0.0.0.0"
         readinessProbe:
           httpGet:
-            path: /
+            path: /login
             port: http
-          initialDelaySeconds: 3
+          initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
         resources:
           requests:
-            cpu: 25m
-            memory: 32Mi
+            cpu: "1"
+            memory: 1Gi
           limits:
-            cpu: 200m
-            memory: 128Mi
+            cpu: "2"
+            memory: 2Gi
 ---
 apiVersion: v1
 kind: Service
@@ -192,13 +284,25 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`stack.cronnecture.com`) && PathPrefix(`/api`)
+    - match: Host(`control.cronnecture.com`) && PathPrefix(`/api/control`)
+      kind: Rule
+      priority: 30
+      services:
+        - name: dashboard
+          port: 80
+    - match: Host(`control.cronnecture.com`) && PathPrefix(`/api/fx`)
+      kind: Rule
+      priority: 30
+      services:
+        - name: dashboard
+          port: 80
+    - match: Host(`control.cronnecture.com`) && PathPrefix(`/api`)
       kind: Rule
       priority: 20
       services:
         - name: agent-core
           port: 8000
-    - match: Host(`stack.cronnecture.com`)
+    - match: Host(`control.cronnecture.com`)
       kind: Rule
       priority: 10
       services:

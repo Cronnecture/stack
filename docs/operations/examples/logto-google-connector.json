@@ -1,0 +1,29 @@
+{
+  "_comment": "Scaffolding only — do not invent client secrets. Copy values from Google Cloud Console into vault_logto_google_* then enable the Google connector in Logto Admin.",
+  "connectorId": "google-universal",
+  "suggested_logto_connector_id": "google",
+  "config": {
+    "clientId": "<GOOGLE_OAUTH_CLIENT_ID>",
+    "clientSecret": "<GOOGLE_OAUTH_CLIENT_SECRET>",
+    "scope": "openid profile email"
+  },
+  "google_cloud_console": {
+    "type": "OAuth client ID",
+    "application_type": "Web application",
+    "name": "Cronnecture Logto (id.cronnecture.com)",
+    "authorized_javascript_origins": [
+      "https://id.cronnecture.com"
+    ],
+    "authorized_redirect_uris": [
+      "https://id.cronnecture.com/callback/google",
+      "https://id.cronnecture.com/callback/<connector-id-from-logto>"
+    ],
+    "notes": [
+      "Sign-in with Google / OAuth for standard consumer accounts is free — no per-login fee from Google for this flow.",
+      "You must create an OAuth client once in Google Cloud (APIs & Services → Credentials).",
+      "After creating the Google connector in Logto Admin, copy the exact callback URI Logto shows (usually /callback/<id>) into Google Console.",
+      "Then set vault_logto_google_client_id / vault_logto_google_client_secret and paste the same values into Logto → Connectors → Google.",
+      "Enable Google on the default tenant sign-in experience."
+    ]
+  }
+}

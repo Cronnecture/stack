@@ -1,0 +1,59 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: to-control
+  namespace: cronnecture-system
+spec:
+  redirectRegex:
+    permanent: true
+    regex: ^https?://[^/]+/(.*)
+    replacement: https://control.cronnecture.com/${1}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: stack-to-control
+  namespace: cronnecture-system
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`stack.cronnecture.com`)
+      kind: Rule
+      priority: 40
+      middlewares:
+        - name: to-control
+      services:
+        - name: dashboard
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ops-to-control
+  namespace: platform
+spec:
+  redirectRegex:
+    permanent: true
+    regex: ^https?://[^/]+/(.*)
+    replacement: https://control.cronnecture.com/${1}
+---
+# Operator UI on ops.cronnecture.com redirects to control.
+# Product APIs, webhooks, status pages, and the customer portal stay on platform.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ops-to-control
+  namespace: platform
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`ops.cronnecture.com`) && !PathPrefix(`/api`) && !PathPrefix(`/status`) && !PathPrefix(`/client`) && !PathPrefix(`/assets`) && !PathPrefix(`/static`) && !PathPrefix(`/webmail`)
+      kind: Rule
+      priority: 40
+      middlewares:
+        - name: ops-to-control
+      services:
+        - name: control-plane
+          port: 8080

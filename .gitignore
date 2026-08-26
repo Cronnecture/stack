@@ -1,7 +1,12 @@
+# Nested Ansible fleet (own git checkout). Operators use /home/dev/stack/ansible.
+ansible/
+# Product checkouts (own git repos).
+apps/marketing/
+apps/portfolio/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
-dashboard/node_modules/
-dashboard/dist/
+operator/dashboard/node_modules/
+operator/dashboard/dist/
 .DS_Store

@@ -1,0 +1,53 @@
+# Cloudflare terminates TLS; Traefik origin is HTTP.
+# Pages → Next.js client-portal. Auth / snapshot / pay / legal stay on platform APIs.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: https-forwarded
+  namespace: platform
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: https
+      X-Forwarded-Port: "443"
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: client-portal-https
+  namespace: platform
+  labels:
+    cronnecture.com/managed-by: stack
+spec:
+  entryPoints:
+    - web
+  routes:
+    # Invoice/file download BFF lives in Next.js and forwards the Logto cookie
+    # to Python /portal/*. If this loses to PathPrefix(`/api`), ops_auth_middleware
+    # demands Cloudflare Access and the client portal session cannot download.
+    - match: Host(`client.cronnecture.com`) && PathPrefix(`/api/portal`)
+      kind: Rule
+      priority: 70
+      middlewares:
+        - name: https-forwarded
+      services:
+        - name: client-portal
+          port: 80
+    - match: Host(`client.cronnecture.com`) && !PathPrefix(`/api/portal`) && (PathPrefix(`/api`) || PathPrefix(`/portal`) || PathPrefix(`/catalog`) || PathPrefix(`/pay`) || PathPrefix(`/legal`) || PathPrefix(`/auth`) || PathPrefix(`/client`) || PathPrefix(`/start`) || PathPrefix(`/static`))
+      kind: Rule
+      priority: 60
+      middlewares:
+        - name: https-forwarded
+      services:
+        - name: control-plane-legacy
+          port: 8080
+    - match: Host(`client.cronnecture.com`)
+      kind: Rule
+      priority: 50
+      middlewares:
+        - name: https-forwarded
+      services:
+        - name: client-portal
+          port: 80

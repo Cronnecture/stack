@@ -5,8 +5,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VAULT="${ANSIBLE_VAULT_FILE:-/home/dev/ansible/config/inventory/group_vars/all/vault.yml}"
-PASS="${ANSIBLE_VAULT_PASSWORD_FILE:-$HOME/.ansible/vault_pass}"
+# shellcheck source=../lib/stack_paths.sh
+source "$ROOT/lib/stack_paths.sh"
+VAULT="${ANSIBLE_VAULT_FILE}"
+PASS="${ANSIBLE_VAULT_PASSWORD_FILE}"
 KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 export KUBECONFIG
 

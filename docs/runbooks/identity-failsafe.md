@@ -1,0 +1,105 @@
+# Identity failsafe
+
+Runbook **RB-16**.
+
+Make login survive one general worker dying. The fleet side is wired. The remaining steps are paid/off-box hosts only you can create.
+
+## Already done on the fleet
+
+- Logto, Hanko, Cerbos: 2 replicas, one per `pool=general` worker, ClusterIP load-balanced
+- Authentik: stays **1** replica until the Supabase session pooler is larger than 15
+- Authentik Redis host now comes from `identity-secrets` (`authentik-redis-host`), so it can move off the PVC without rewriting YAML
+- Helper: `make identity-failsafe` (status) and `scripts/identity-failsafe.sh`
+
+## What you do (in this order)
+
+### 1. Raise the Authentik pool — then tell the fleet
+
+Supabase → project **`cronnecture-identity`** → **Project Settings → Compute / Add-ons**.
+
+- Keep **session** pooler port **5432**. Do not switch Authentik to `:6543`.
+- Raise compute so session `pool_size` is **at least 30** (Micro or larger). Nano/15 is what just outaged `auth.cronnecture.com`.
+- While you are there: if the project is still Free, **upgrade to Pro** so daily backups exist. PITR is optional (~€100/mo) — turn it on when you want point-in-time, not required for replica HA.
+
+Then, on `cp-master-01`:
+
+```bash
+cd /home/dev/stack
+./scripts/identity-failsafe.sh scale-authentik --i-raised-the-pooler
+```
+
+Expect one Authentik pod on each general worker and `https://auth.cronnecture.com/-/health/ready/` → 200.
+
+### 2. Hosted Redis for Authentik
+
+The PVC `identity-redis` is pinned to `worker-general-01`. Two Authentik pods still die if that node dies.
+
+1. Create a small Redis (Upstash free / Redis Cloud). Enable TLS if the vendor requires it.
+2. On the control node (values stay in your shell, not in git):
+
+```bash
+cd /home/dev/stack
+AUTHENTIK_REDIS_HOST='your-redis.upstash.io' \
+AUTHENTIK_REDIS_PORT=6379 \
+AUTHENTIK_REDIS_TLS=true \
+AUTHENTIK_REDIS_PASSWORD='…' \
+  ./scripts/identity-failsafe.sh apply-redis
+```
+
+Leave the in-cluster Redis PVC in place. Do not delete it until Authentik has been healthy on the hosted Redis for a day.
+
+Also store the Redis URL in the encrypted vault (`vault_authentik_redis_host` / password) so break-glass can rebuild it.
+
+### 3. Dedicated Postgres for Logto (direct host, not the identity pooler)
+
+Logto is already 2 pods. Its database is still `logto-postgres` on `worker-general-01`.
+
+Do **not** point Logto at the shared `cronnecture-identity` session pooler — Node/pg returned `ENOIDENTIFIER` there.
+
+1. New Supabase project, e.g. `cronnecture-logto`.
+2. Create an empty database named `logto` (or use `postgres`).
+3. Use the **direct** URI: `db.<ref>.supabase.co:5432` (not `*.pooler.supabase.com`).
+4. Dump and restore, then flip the secret:
+
+```bash
+# on cp-master-01 — dump does not print the DSN
+kubectl -n identity exec deploy/logto-postgres -- \
+  pg_dump -U postgres -d logto --no-owner --no-acl > /tmp/logto.sql
+# load /tmp/logto.sql into the new project (psql / SQL editor)
+# then:
+LOGTO_DATABASE_URL='postgresql://postgres.<ref>:…@db.<ref>.supabase.co:5432/logto?sslmode=require' \
+  ./scripts/identity-failsafe.sh apply-logto
+```
+
+Keep the `logto-postgres` PVC until the new URL has served traffic.
+
+Put the URI in vault as `vault_identity_database_url_logto`.
+
+### 4. Laptop Ansible control
+
+On your laptop (once):
+
+1. `git clone <repo> ~/stack`
+2. Copy `~/.ansible/vault_pass` and `~/.ssh/id_ed25519` from the break-glass pack (R2 or `worker-general-01:/var/backups/cronnecture-break-glass/latest/`)
+3. `export STACK_ROOT=~/stack FLEET_ROOT=~/stack/ansible`
+4. `make ping` from the laptop
+
+Refresh the pack after key rotation: `make break-glass` on the control node, then download it again.
+
+### 5. Do not
+
+- Scale Authentik before step 1
+- Add a second k3s server (HA is 1→3 only)
+- `make identity` / retarget Authentik at in-cluster Postgres
+- Dual-replica Redis, `logto-postgres`, Vaultwarden, or Passbolt
+
+## Verify
+
+```bash
+cd /home/dev/stack
+./scripts/identity-failsafe.sh status
+curl -sS -o /dev/null -w '%{http_code}\n' https://auth.cronnecture.com/-/health/ready/
+curl -sS -o /dev/null -w '%{http_code}\n' https://id.cronnecture.com/api/status
+```
+
+Done when: Authentik Redis host is not `identity-redis`, Logto DSN host is not `logto-postgres:5432`, Authentik is 2/2 on two nodes, and both public health URLs return 200/204.
