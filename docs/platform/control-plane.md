@@ -1,11 +1,12 @@
 # Control plane (ops dashboard)
 
-Python FastAPI leftover plus the customer portal. Day-to-day ops UI is the JS platform API ([platform-api.md](../architecture/platform-api.md)): seven TSX sites behind `api-edge` on NodePort **30080**.
+Day-to-day operator UI is the Next.js control portal at **https://control.cronnecture.com** (repo `cronnecture-control-portal`, Deployment `dashboard` in `cronnecture-system`). `ops.cronnecture.com` and `stack.cronnecture.com` redirect there.
 
-**URL:** `https://ops.cronnecture.com`  
-**UI version (cache buster):** shared across leftover dashboard shells in `static/dashboards/*.html` — currently **`?v=2.1.0`** (hard-refresh after deploys)  
+Python FastAPI in `platform` remains the money + OIDC + `/portal` API (`control-plane-legacy`). JS `api-edge` still owns some catalog `/api/*` routes. Leftover Vite/HTML shells in `static/dashboards/*` are not the product humans should open.
+
+**URL:** `https://control.cronnecture.com` (legacy `https://ops.cronnecture.com` 302s here)  
 **API title version:** `0.34.0` (`app/main.py`)  
-**Bookkeeping:** [company-nl.md](../business/company-nl.md) — deprecated; use Moneybird + Stripe client billing  
+**Bookkeeping:** [company-nl.md](../business/company-nl.md) — operator books + Stripe client billing (not Moneybird)  
 
 **Namespace:** `platform` (staging: `platform-staging` → NodePort `30081` / `staging-ops.cronnecture.com`)  
 **Edge:** JS `api-edge` owns NodePort `30080`. Python is ClusterIP `control-plane-legacy` for unported APIs + `/client/portal/{uuid}`. Catalog-owned `/api/*` on Python return **501 `js_owned`** so ClusterIP cannot split-brain.  

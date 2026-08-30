@@ -9,7 +9,7 @@ Honest assessment of single-control-node risks, blast radius, and mitigation roa
 | V-01 | Registry storage | **Medium** (was High) | **R2-backed** — bucket `cronnecture-fleet-registry`; registry pod is still single-replica on `pool=general` (`worker-general-01`) |
 | V-02 | Management plane coupled to control node | **High** | Ansible, etcd, FLEET_ROOT, vault on same host |
 | V-03 | Supabase hard dependency | **Medium** | Control plane CrashLoop if DB unreachable |
-| V-04 | Single compute node | **Low** | Two `compute_general` workers (HEL1 + FRA). Client connectors on every node. HTTP origin is Traefik ClusterIP. |
+| V-04 | Single compute node | **High** | One `compute_general` worker (`worker-general-01`, Hetzner HEL1). Client connectors on every node. HTTP origin is Traefik ClusterIP `10.43.125.134`. |
 | V-05 | Single k3s server (etcd) | **High** | No etcd quorum |
 
 ## V-01: Registry bottleneck
@@ -38,7 +38,7 @@ Cannot deploy, rebuild, or restart apps that need a fresh pull. All client names
 | **Done** | R2-backed registry when `vault_registry_s3_*` set (PVC fallback otherwise) | ✅ Template-wired |
 | **Now** | Daily backup + health check | ✅ Cron |
 | **Now** | Off-site backup sync to R2 (`vault_backup_s3_*`, `.r2-last-sync`) | ✅ + restore fire drill |
-| **Next** | Second compute node (image cache on two workers) | ✅ `worker-general-01` + `worker-general-02` |
+| **Next** | Dedicated mail node (Stalwart off etcd) | ✅ `mail-01` |
 | **Later** | External registry (GHCR) with `control_plane_private_registry` | Optional |
 
 The registry pod is scheduled on `pool=general`, not the etcd host. Image blobs live in R2; losing the worker loses pulls until the pod reschedules.
@@ -151,7 +151,7 @@ Priority 1 (before paying clients — see MVP-FIRST-CLIENTS.md)
 └── Weekly restore fire drill (scratch emergency bundle + R2 manifest)
 
 Priority 2 (done / leftover)
-├── Second compute_general node — ✅ worker-general-01 + worker-general-02
+├── Dedicated mail node — ✅ mail-01 (Stalwart off etcd)
 └── Registry pod still single-replica on the control node (R2-backed)
 
 Priority 3 (5+ VPS / HA)

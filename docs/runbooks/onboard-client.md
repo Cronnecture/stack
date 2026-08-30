@@ -4,7 +4,7 @@ Runbook **RB-05**.
 
 End-to-end procedure for adding a new tenant via the **CRM New client wizard** (and optional durable provision job).
 
-**Self-serve Standard Pilot (no wizard):** buyers use [client.cronnecture.com/start](https://client.cronnecture.com/start) → Stripe Checkout → webhook auto-provisions `site_only` on platform subdomain `{slug}.sites.cronnecture.com` (day-1 bootstrap; no customer DNS; TLS via dedicated `sites.cronnecture.com` Cloudflare zone). See [stripe-billing.md — Self-serve](../platform/stripe-billing.md#self-serve-standard-pilot). **Live self-serve payments unlock after KVK/VAT (~2026-08-18)** (`self_serve_live_payments`, default false).
+**Self-serve Website (no wizard):** buyers use [client.cronnecture.com/start](https://client.cronnecture.com/start). While `self_serve_live_payments` is **false** (default), `/start` is contact / invoice only. See [stripe-billing.md — Self-serve](../platform/stripe-billing.md#self-serve-website-checkout). Do not open public cards unless the founder asks.
 
 **Custom domain upgrade (self-serve):** CRM portfolio shows a **Domain request** chip when the customer submits **Connect custom domain** in the portal. Add their domain under Workspace → Domains (same NS cutover as below), expose the app on the new hostname, leave the platform subdomain as fallback until cutover is confirmed. Use this runbook also for migrations and non-self-serve packs.
 
@@ -89,7 +89,23 @@ Policy: **pay-needed immediately**; site suspend only after **90 days** unpaid.
 1. Billing tab (or wizard checkout) → create checkout / link subscription / refresh.
 2. Customer hub → Billing → **Manage billing** (Stripe Customer Portal) when payment is needed.
 
-## Step 5: Day-2 — New site & health
+## Step 5: Day-2 — Grant their GitHub repo (not the platform PAT)
+
+Do **not** attach `Bolt2841/…` or NoordDrive’s repo. Each customer App binds **one** `owner/repo` they own.
+
+1. Control portal → client → **Release → Grant GitHub repo**. Paste their `org/repo` (leave empty until they have a real repo).
+2. Copy the **deploy key** (read-only) and **webhook secret**.
+3. On GitHub, for **that repo only**:
+   - **Settings → Deploy keys → Add deploy key** (write access off). Paste the public key. Title: `Cronnecture {slug}`.
+   - **Settings → Webhooks → Add webhook**. Payload URL: `https://ops.cronnecture.com/api/webhooks/github` (paste in GitHub; POST only — a browser GET is 405, not a missing route). Content type: `application/json`. Secret: the **per-client** secret (never Settings → Deploy `github_webhook_secret`). Events: **Just the push event**.
+4. Toggle **Auto-deploy** on after the hook is saved. A push to the bound branch ships **this** tenant only. Unknown repos return 404 and do not enqueue a build.
+5. Next step (not this box): a GitHub App **installation** on the client org, so clone uses an installation token instead of a deploy key.
+
+Ops-built sites (no repo) stay “Cronnecture is building your site.” The customer hub can **Connect Git** with the same deploy-key path. NoordDrive stays locked. Public Checkout stays off. Do not AddNode from the hub.
+
+Capacity: 4 live tenants on one general worker.
+
+## Step 6: Day-2 — New site & health
 
 - Apps → **New site** (name + subdomain + template) → deploy + expose job.
 - Templates: `vite-react-ts`, `static-vite`, `node-api-stub`, `supabase-ready`.

@@ -1,6 +1,6 @@
 # Client PSP connect (Mollie / Stripe Connect)
 
-Clients connect **their own** Mollie or Stripe accounts in the customer portal, then ops (or the client) links a connected account to specific apps. This is **not** Cronnecture platform billing and does **not** enable public Pilot Checkout (`self_serve_live_payments` stays off until KVK).
+Clients connect **their own** Mollie or Stripe accounts in the customer portal, then ops (or the client) links a connected account to specific apps. This is **not** Cronnecture platform billing and does **not** enable public Checkout (`self_serve_live_payments` stays off until you ask for public cards).
 
 ## URLs
 

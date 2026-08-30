@@ -70,11 +70,6 @@ PY
     kubectl -n "$NS" get pods -l app=authentik-server -o wide
     ;;
 
-  apply-logto)
-    echo "Logto is retired. Product SSO is Authentik. There is nothing to retarget." >&2
-    exit 2
-    ;;
-
   *)
     echo "Usage: $0 status|apply-redis|scale-authentik" >&2
     exit 1

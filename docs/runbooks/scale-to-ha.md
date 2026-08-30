@@ -9,7 +9,7 @@ Roadmap for multi-server etcd, edge load balancing, and compute redundancy.
 | Tier | Current | HA target |
 |------|---------|-----------|
 | `k3s_server` | 1 node | 3 nodes (etcd quorum). **Never add a second server** (1→2 is split-brain). |
-| `compute_general` | 2 nodes (HEL1 + FRA) | 2+ (Phase 1 done) |
+| `compute_general` | 1 node (HEL1) + dedicated `mail` node (FRA) | 2+ general workers |
 | `edge_lb` | none | 2 nodes + VIP |
 | `siem` | empty (retired) | leave empty |
 
@@ -17,7 +17,7 @@ Compute is already redundant. The remaining SPOF is the single etcd member. This
 
 ## Phase 1: Second compute node (done)
 
-**Goal:** Client workload redundancy + ingress spread. Live: `worker-general-01` (HEL1) + `worker-general-02` (FRA).
+**Goal:** Client workload redundancy + ingress spread. Live general compute is `worker-general-01` (HEL1). `mail-01` (FRA) is the mail pool, not a second general worker.
 
 1. Provision VPS
 2. Add node (either runs now, or the pending inbox picks it up within 2 minutes):
@@ -52,6 +52,39 @@ ansible -i config/inventory/hosts.ini compute_general -a 'systemctl is-active "c
 ```
 
 **Placement tip:** Run `make rebalance` weekly.
+
+## Phase 1.5: Pod autoscaler (no new VPS)
+
+**Goal:** When load grows, pods scale out on the workers you already have, and a *new* general VPS is absorbed automatically.
+
+This is **not** a cloud cluster-autoscaler (no Hetzner/Hostinger API spend). It is:
+
+| Piece | What it does |
+|-------|----------------|
+| HPA | `dashboard` / `client-portal` / `cronnecture-website` **maxReplicas 2** until a second compute_general worker (`kubernetes/autoscaling.yaml`). **Gitea** HPA min 2 / max 2–4 lives in the Gitea addon (`roles/gitea`) and tracks Ready general workers. |
+| Topology spread | `ScheduleAnyway` on hostname + `topology.kubernetes.io/zone`. Extra replicas land on a new worker instead of stacking. |
+| Scale hint | `make scale-hint` / cron at :07/:22/:37/:52. If pods stay Pending (Insufficient cpu/memory), mail ops with `make pending-node IP=… CLASS=general`. |
+| Local images | Dashboard + client-portal are `Never` tags. `finish-onboard.sh` copies them onto a new general worker (`make sync-local-images`). Client sites pull from fleet-registry. |
+| Pending inbox | Existing `*/2` cron already bootstraps a VPS once the YAML drop exists. |
+
+Do **not** HPA client sites yet: billing 90-day suspend scales those Deployments to 0, and an HPA `minReplicas` would fight it.
+
+Verify:
+
+```bash
+sudo k3s kubectl get hpa -A
+sudo k3s kubectl get nodes -L pool,topology.kubernetes.io/zone
+make scale-hint
+```
+
+When you buy the next general VPS (not etcd — that is still Phase 3 / 1→3):
+
+```bash
+make pending-node IP=<new-ip> CLASS=general PROVIDER=hetzner REGION=hel1
+# after Ready:
+sudo k3s kubectl get nodes -L pool,topology.kubernetes.io/zone
+make sync-local-images HOST=worker-general-03   # onboard already does this
+```
 
 ## Phase 2: Edge load balancer (5+ nodes)
 

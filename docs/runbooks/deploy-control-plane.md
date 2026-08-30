@@ -72,7 +72,7 @@ curl -sf http://127.0.0.1:30080/api/health
 curl -sf https://ops.cronnecture.com/api/health/live
 ```
 
-UI: hard refresh dashboard shells under `static/dashboards/*.html` (cache buster e.g. `?v=2.1.0`). Customer hub: `static/customer-portal/`.
+UI: Next.js control portal (`control.cronnecture.com`). Leftover dashboard shells under `static/dashboards/*.html` are not the operator product. Customer hub UI: Next.js `client-portal` repo; Python `/portal` API.
 
 ### Hot path (control node)
 

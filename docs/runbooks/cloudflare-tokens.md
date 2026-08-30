@@ -70,7 +70,6 @@ In **API Tokens**, delete any previous `k3s-fleet *` / `bootstrap` entries that 
 ```bash
 make cloudflare          # edge policy, portals, tunnels, SSH Access apps
 make control-plane       # ops API Secret refreshed from vault
-make siem                # block token on SIEM node
 make clients             # if client tunnels use vault CF tokens
 # optional:
 make maintenance-worker
@@ -112,7 +111,6 @@ SIEM should receive **only** the block token (not DNS/WAF).
 |-------|--------|
 | DNS / WAF / Access / Workers | `make cloudflare` (+ maintenance-worker if workers) |
 | Tunnel | `make cloudflare && make control-plane && make clients` |
-| Block | `make siem` |
 | Analytics / readonly | `make control-plane` |
 
 4. Revoke the old token in the dashboard  

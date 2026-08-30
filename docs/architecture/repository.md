@@ -24,13 +24,10 @@ Canonical root is `/home/dev/stack`. There is no `~/ansible` or
 ├── kubernetes/              # mail, identity, operator YAML
 ├── operator/
 │   ├── dashboard/
-│   ├── agent-core/
-│   └── billing/
-├── overlays/
-│   └── intelligence/
+│   └── agent-core/
 ├── config/
 ├── lib/                     # stack_paths.sh / stack_paths.py
-└── scripts/                 # keep-set, tunnel, overlay deploy
+└── scripts/                 # keep-set, tunnel, identity helpers
 ```
 
 ## Ansible vs stack

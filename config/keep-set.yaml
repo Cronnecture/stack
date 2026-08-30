@@ -2,10 +2,9 @@
 keep:
   - mail
   - identity
+  - git
   - platform
   - kube-system
-  - cert-manager
-  - cronnecture-intelligence
   - cronnecture-system
   - client-noorddriveautos
 owned_by_stack:
@@ -13,8 +12,8 @@ owned_by_stack:
     manifests:
       - kubernetes/mail.yaml
     secret: none
-    pvcs:
-      - stalwart-data
+    # Stalwart data is hostPath /var/lib/cronnecture/stalwart on mail-01 (not a PVC).
+    pvcs: []
   identity:
     manifests:
       - kubernetes/identity.yaml
@@ -28,6 +27,13 @@ owned_by_stack:
       - passbolt-mariadb
       - passbolt-data
       - passbolt-jwt
+  git:
+    manifests:
+      - kubernetes/gitea.yaml
+    secret: gitea-secrets
+    pvcs:
+      - gitea-postgres
+      - gitea-data
 protected_domains:
   - cronnecture.com
   - www.cronnecture.com
@@ -40,6 +46,7 @@ protected_domains:
   - client.cronnecture.com
   - passbolt.cronnecture.com
   - auth.cronnecture.com
+  - git.cronnecture.com
   - stack.cronnecture.com
   - control.cronnecture.com
 public_ports:

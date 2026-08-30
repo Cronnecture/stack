@@ -31,7 +31,7 @@ Set `OPS_PASSWORD_LOGIN=1` on the control-plane Deployment (ansible var `ops_pas
 | **Set / reset password** | With API token: `POST /api/ops-users/{id}/password`; or DB/`ensure_superadmin` seed from legacy `OPS_ADMIN_PASSWORD` |
 | **Access allowlist** | Superadmin email always stays on the ops Access policy payload even if sync partially fails |
 
-Do **not** put Vaultwarden (`vault.*`) behind Access — Bitwarden clients need `skip_access`.
+Do **not** put Git (`git.*`) behind Access — clients SSO via Authentik like the hub. Do **not** put Vaultwarden (`vault.*`) behind Access — Bitwarden clients need `skip_access`.
 
 ## How to add an employee or contractor
 
@@ -96,6 +96,7 @@ Per-permission overrides can refine a role when needed.
 ## Client domain access
 
 - **Customer portal:** Authentik OIDC at `auth.cronnecture.com` (invite-only; cookie `cp_oidc_session`, login `/api/auth/oidc/login`). Cloudflare Access is **off** on `client.cronnecture.com` (`skip_access` + `purge_access_apps`).
+- **Git:** `git.cronnecture.com` is the same model — **no Cloudflare Access**. Gitea signs in via Authentik OIDC (SSO after the client hub). Each tenant gets a private org `{slug}` and restricted user; `gitadmin` is ops-only.
 - **App domains:** exposures with `cf_access_enabled` — oversight on Users / Access; edit allowlists in CRM → client → Access.
 - Dev emails always merged via `PORTAL_DEV_EMAILS` for portals.
 - **Vaultwarden** stays `skip_access` (Bitwarden clients).

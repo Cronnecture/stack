@@ -17,11 +17,10 @@ Bootstrap a fresh VPS and join it to the fleet.
 |-------|-----------------|----------|
 | `auto` (default) | Placement engine decides | Normal expansion |
 | `server` | `k3s_server` | Only when going **1→3** etcd. Never add a second server. |
-| `general` | `compute_general` | Need more app capacity |
-| `cpu` | `compute_cpu` | CPU-heavy pool |
-| `memory` | `compute_memory` | Memory-heavy pool |
+| `general` | `compute_general` | Need more app capacity (Hetzner is the primary compute node) |
+| `mail` | `mail` | Extra Stalwart node. A/MX/SPF publish on `make cloudflare` |
+| `db` | `db` | Database_cluster. After Ready postgres: `make site` points Gitea DSN at it |
 | `lb` | `edge_lb` | HAProxy/VIP tier |
-| `siem` | `siem` | Retired — do not add; Wazuh is gone |
 
 Policy thresholds: `config/policies/placement.yml`
 
@@ -63,17 +62,17 @@ make add-node IP=203.0.113.50 CLASS=general PROVIDER=hetzner REGION=hel1
 
 ```bash
 ./scripts/fleet/add-node.sh 203.0.113.50
-FLEET_PROVIDER=hetzner FLEET_REGION=hel1 ./scripts/fleet/add-node.sh 203.0.113.50 cpu
+FLEET_PROVIDER=hostinger FLEET_REGION=fra ./scripts/fleet/add-node.sh 203.0.113.50 mail
 # or: bin/fleet-add-node 203.0.113.50 general
 ```
 
 ### What happens
 
 1. **Bootstrap** (`bootstrap.yml`) — packages, SSH key, UFW, cloudflared, fail2ban
-2. **Placement** — `autoplace.py` assigns group (if `auto`)
+2. **Placement** — `place-node.py` assigns group (if `auto`)
 3. **Inventory update** — IP added under `[group]` with file lock (`fleet_provider` / `fleet_region` when set)
-4. **Full converge** — `site.yml` (k3s join, SIEM, CF edge/SSH Access, clients, fleet_ops, monitoring, mail)
-5. **Finish onboard** — wait until the hostname is Ready, sync live `hosts.ini` for the JS fleet API, run `rebalance.sh --apply` (pool moves only; never auto-promotes a control-plane)
+4. **Full converge** — `site.yml` (k3s join, CF edge/SSH Access, clients, fleet_ops, monitoring, mail)
+5. **Finish onboard** — wait until the hostname is Ready, sync live `hosts.ini` for the JS fleet API, run `rebalance.sh --apply` (pool moves only; never auto-promotes a control-plane). For `compute_general`, also `sync-local-images.sh` so dashboard / client-portal (`imagePullPolicy: Never`) exist on the new worker, then reconverge Gitea (HPA max + anti-affinity). For `mail`, `mail_dns.yml` publishes A/MX/SPF (`mail.cronnecture.com` + `mail-NN`). Extra mail boxes are DNS/send capacity — do not run a second Stalwart replica on the same RocksDB. For `db`, Gitea DSN migrate is dry-run until postgres in ns `db` is Ready.
 
 Duration: ~15–30 minutes.
 
@@ -90,6 +89,7 @@ For compute nodes:
 ```bash
 systemctl status cloudflared
 sudo k3s kubectl get pods -A -o wide | grep <IP-hostname>
+make sync-local-images HOST=<new-hostname>   # onboard already does this
 ```
 
 For k3s_server:

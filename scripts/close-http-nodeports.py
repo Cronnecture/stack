@@ -72,8 +72,6 @@ def live_patch() -> None:
         ("identity", "vaultwarden"),
         ("identity", "authentik"),
         ("identity", "passbolt"),
-        ("identity", "logto"),
-        ("identity", "hanko"),
         ("platform", "control-plane"),
         ("cronnecture-system", "agent-core"),
         ("cronnecture-system", "dashboard"),

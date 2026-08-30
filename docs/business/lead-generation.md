@@ -20,7 +20,7 @@
 
 **Opinionated posture:** build a **prospect pipeline** that feeds the existing convert→wizard path. Do not bolt cold outreach onto `Client` rows until someone pays / is provisioned.
 
-**Primary acquisition engine (2026-08):** inbound brand + **contact/email** + invoice/Tikkie + warm `contact_leads` nurture — see [acquisition.md](acquisition.md). Public Stripe stays off until KVK. Cold research/call-first remains secondary capacity, not the default growth bet.
+**Primary acquisition engine (2026-08):** inbound brand + **contact/email** + invoice/Tikkie + warm `contact_leads` nurture — see [acquisition.md](acquisition.md). Public Stripe Checkout stays off. Cold research/call-first remains secondary capacity, not the default growth bet.
 
 ---
 

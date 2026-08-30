@@ -77,7 +77,6 @@ make site
 # Step-by-step equivalents:
 make baseline      # hardening + cloudflared on all nodes
 make cluster       # k3s control plane + workers
-make siem          # no-op while [siem] is empty (Wazuh retired)
 make control-plane # ops dashboard + registry
 make cloudflare    # edge policy + admin portals
 make clients       # per-client tunnels (needs cf_clients.yml or API rebuild)

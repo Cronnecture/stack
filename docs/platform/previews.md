@@ -204,11 +204,13 @@ GitHub-sourced previews share the same ops webhook as app auto-deploy:
 https://ops.cronnecture.com/api/webhooks/github
 ```
 
-On create (when `github_repo` is set), control-plane ensures a push hook on that repo (reuses the existing hook if the URL already matches). A push to `SitePreview.github_branch` enqueues `deploy_preview` with **`rebuild=true`** so Kaniko rebuilds with `BASE_PATH=/previews/{uuid}`.
+Paste that URL in GitHub (POST). A browser GET is **405** `GitHub webhook; POST only` — not a missing Next.js route. Cloudflare Access is bypassed for `/api/webhooks/*`.
+
+On create (when `github_repo` is set), control-plane ensures a push hook on **platform/preview** repos (reuses the existing hook if the URL already matches). **Tenant** apps never share that platform HMAC: each client has its own webhook secret. A push whose `repository.full_name` is not bound to one App (or a platform site / preview) returns **404** and does not enqueue a deploy.
 
 - Matching is `github_repo` (case-insensitive) + exact branch; `taken_down` rows are ignored.
-- App auto-deploy and preview redeploy can share one hook; the hook is removed only when **no** auto-deploy app and **no** active GitHub preview still need it.
-- Webhook secret: Settings → Deploy → `github_webhook_secret` (auto-generated on first use).
+- Tenant HMAC is verified with **that client’s** secret only. The platform secret (`github_webhook_secret`) is for ops/platform apps and GitHub-sourced **previews**, never for tenant apps.
+- App auto-deploy and preview redeploy can share the same URL; tenant hooks must use the per-client secret.
 
 ## Nightly GC
 

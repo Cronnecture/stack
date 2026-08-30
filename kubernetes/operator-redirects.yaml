@@ -40,6 +40,9 @@ spec:
 ---
 # Operator UI on ops.cronnecture.com redirects to control.
 # Product APIs, webhooks, status pages, and the customer portal stay on platform.
+# /webmail is included: inbox lives on control.cronnecture.com/webmail/{name}.
+# /app is forced to control / so leftover TSX never lands on a 404 /app page.
+# GitHub webhooks stay on Python (HMAC). Never 308 them onto the Next.js UI.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -49,11 +52,103 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`ops.cronnecture.com`) && !PathPrefix(`/api`) && !PathPrefix(`/status`) && !PathPrefix(`/client`) && !PathPrefix(`/assets`) && !PathPrefix(`/static`) && !PathPrefix(`/webmail`)
+    - match: Host(`ops.cronnecture.com`) && PathPrefix(`/api/webhooks/github`)
+      kind: Rule
+      priority: 80
+      services:
+        - name: control-plane-legacy
+          port: 8080
+    - match: Host(`ops.cronnecture.com`) && PathPrefix(`/api/webhooks/gitea`)
+      kind: Rule
+      priority: 80
+      services:
+        - name: control-plane-legacy
+          port: 8080
+    - match: Host(`ops.cronnecture.com`) && PathPrefix(`/app`)
+      kind: Rule
+      priority: 50
+      middlewares:
+        - name: leftover-app-to-home
+      services:
+        - name: control-plane
+          port: 8080
+    - match: Host(`ops.cronnecture.com`) && !PathPrefix(`/api`) && !PathPrefix(`/status`) && !PathPrefix(`/client`) && !PathPrefix(`/assets`) && !PathPrefix(`/static`)
       kind: Rule
       priority: 40
       middlewares:
         - name: ops-to-control
+      services:
+        - name: control-plane
+          port: 8080
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: leftover-app-to-home
+  namespace: platform
+spec:
+  redirectRegex:
+    permanent: true
+    regex: ^https?://.*
+    replacement: https://control.cronnecture.com/
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: leftover-app-to-home
+  namespace: cronnecture-system
+spec:
+  redirectRegex:
+    permanent: true
+    regex: ^https?://.*
+    replacement: https://control.cronnecture.com/
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: leftover-app-to-home
+  namespace: cronnecture-system
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`control.cronnecture.com`) && PathPrefix(`/app`)
+      kind: Rule
+      priority: 50
+      middlewares:
+        - name: leftover-app-to-home
+      services:
+        - name: dashboard
+          port: 80
+---
+# Leftover /app SPA on webmail.* must not stay live. Send it to the Next.js UI.
+# Customer inbox stays on this host (Python static/webmail). Do not 308 / to
+# control — that is a second Access app and sends customers to ops.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: webmail-app-to-control
+  namespace: platform
+spec:
+  redirectRegex:
+    permanent: true
+    regex: ^https?://.*
+    replacement: https://control.cronnecture.com/
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: webmail-to-control
+  namespace: platform
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`webmail.cronnecture.com`) && (PathPrefix(`/app`) || PathPrefix(`/login`) || PathPrefix(`/welcome`))
+      kind: Rule
+      priority: 60
+      middlewares:
+        - name: webmail-app-to-control
       services:
         - name: control-plane
           port: 8080

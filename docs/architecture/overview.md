@@ -2,7 +2,7 @@
 
 How the Cronnecture fleet is designed, how traffic flows, and how components interact.
 
-Current as of **26 August 2026**. Live cluster: k3s `v1.35.4+k3s1`, 1 server + 2 general workers.
+Current as of **26 August 2026**. Live cluster: k3s `v1.35.4+k3s1`, 1 server + 1 general worker + 1 mail node.
 
 ## Design goals
 
@@ -29,21 +29,21 @@ Current as of **26 August 2026**. Live cluster: k3s `v1.35.4+k3s1`, 1 server + 2
          │                   │                   │
          ▼                   ▼                   ▼
 ┌────────────────┐  ┌────────────────┐  ┌────────────────┐
-│  k3s_server    │  │ compute_general│  │ compute_general│
+│  k3s_server    │  │ compute_general│  │ mail           │
 │  31.97.126.9   │  │ 135.181.58.45  │  │ 72.60.32.178   │
 │  Hostinger FRA │  │  Hetzner HEL1  │  │  Hostinger FRA │
-│  cp-master-01  │  │ worker-gen-01  │  │ worker-gen-02  │
+│  cp-master-01  │  │ worker-gen-01  │  │ mail-01        │
 │                │  │                │  │                │
 │ · etcd + API   │  │ · k3s agent    │  │ · k3s agent    │
-│ · Ansible      │  │ · client pods  │  │ · client pods  │
-│ · operator UI  │  │ · identity     │  │ · identity     │
-│ · platform APIs│  │ · registry/web │  │ · cloudflared  │
-│ · mail 25/587  │  │ · cloudflared  │  │                │
+│ · Ansible      │  │ · client pods  │  │ · Stalwart     │
+│ · (tainted)    │  │ · identity     │  │ · host 25/587  │
+│                │  │ · JS APIs + CP │  │ · cloudflared  │
+│                │  │ · cloudflared  │  │                │
 └────────────────┘  └────────────────┘  └────────────────┘
          Traefik ClusterIP 10.43.125.134:80 (HTTP origin for all tunnels)
 ```
 
-WAN is default-deny. The only public origin ports are **mail 25/587** on the control node (`mail.cronnecture.com` A record). All HTTP is Cloudflare tunnel → Traefik ClusterIP — **not** host `:80` and **not** NodePort `30080` (that NodePort was closed).
+WAN is default-deny. The only public origin ports are **mail 25/587** on `mail-01` (`mail.cronnecture.com` A record). All HTTP is Cloudflare tunnel → Traefik ClusterIP — **not** host `:80` and **not** NodePort `30080` (that NodePort was closed).
 
 ### Target HA topology (when scaled)
 
@@ -53,13 +53,13 @@ At 5+ nodes: add `[edge_lb]` with keepalived VIP. At 7+ nodes: 3× `[k3s_server]
 
 | Group | Purpose | Current |
 |-------|---------|---------|
-| `k3s_server` | Control plane, embedded etcd, platform APIs, operator UI, Stalwart | 1 host (`cp-master-01`) |
-| `compute_general` | Default workloads, identity, registry, client apps, connectors | 2 hosts |
-| `compute_cpu` / `compute_memory` | Tainted specialized pools | empty |
+| `k3s_server` | Control plane + etcd only | 1 host (`cp-master-01`, Hostinger KVM8) |
+| `compute_general` | Default workloads, identity, JS APIs, Python CP, client apps | 1 host (`worker-general-01`, Hetzner) |
+| `mail` | Stalwart SMTP/IMAP (tainted `pool=mail`) | 1 host (`mail-01`, Hostinger KVM4) |
 | `edge_lb` | HAProxy + keepalived VIP | empty |
 | `siem` | Wazuh managers | empty (retired) |
 
-Placement policy: `ansible/config/policies/placement.yml`. Engine: `ansible/scripts/fleet/autoplace.py`.
+Placement policy: `ansible/config/policies/placement.yml`. Engine: `ansible/scripts/fleet/place-node.py`.
 
 ## Kubernetes layout
 
@@ -73,7 +73,7 @@ Runs k3s **server** (API + etcd). Platform addon: `ansible/roles/control_plane/t
 
 | Workload | Replicas | Notes |
 |----------|----------|-------|
-| `dashboard` | 2 | Next.js control portal at **https://control.cronnecture.com**. Pinned to `cp-master-01`. Source: github.com/Cronnecture/cronnecture-control-portal |
+| `dashboard` | 2 | Next.js control portal at **https://control.cronnecture.com**. `pool=general` + topology spread (HPA maxReplicas 2 until a second worker). Source: github.com/Cronnecture/cronnecture-control-portal |
 | `agent-core` | 1 | Fleet/cluster catalog API on `/api` of the same host. `GET /api/fleet/shell` + sliced ListResult reads; `POST /api/jobs` `{type,target,payload}` |
 
 `ops.cronnecture.com` and `stack.cronnecture.com` **redirect the UI** here. Product APIs, webmail, webhooks, status, and the customer portal stay on `platform`.
@@ -83,13 +83,13 @@ Runs k3s **server** (API + etcd). Platform addon: `ansible/roles/control_plane/t
 | Workload | Replicas | Notes |
 |----------|----------|-------|
 | `api-edge` + JS APIs | catalog | Catalog in `ansible/config/policies/api-catalog.yml`. Service **`control-plane` is ClusterIP → `api-edge`** (2 replicas). `api-data` is the only JS process with a DB URL. See [platform-api.md](platform-api.md) |
-| `control-plane` | 3 | FastAPI leftover APIs + customer-portal middleware (ClusterIP `control-plane-legacy`); Supabase DB; memory limit **`10Gi`** (request `256Mi`) |
+| `control-plane` | 3 | FastAPI leftover APIs + customer-portal middleware (ClusterIP `control-plane-legacy`); Supabase DB; request **`250m` / `512Mi`**, limit **`10Gi`**; `pool=general` |
 | `fleet-registry` | 1 | On `pool=general` (`worker-general-01`). NodePort **30500**. **R2** (`REGISTRY_STORAGE=s3`, bucket `cronnecture-fleet-registry`) |
 | `cronnecture-website` | 1 | Marketing: `cronnecture.com` / `www` (EN), `cronnecture.nl` / `www` (NL) via Traefik. On `pool=general` |
 | `maintenance-page` | 1 | Fallback origin for edge maintenance / billing hold |
 | `postgres` | 0 | Only if no `vault_platform_database_url` (not deployed) |
 
-JS APIs (all ClusterIP, pinned to the control-plane node): `api-edge`, `api-data`, `api-public`, `api-tenant`, `api-ops`, `api-auth`, `api-fleet`, `api-mail`, plus ops TSX sites `api-ops-ui` / `api-ops-crm` / `api-ops-fleet` / `api-ops-jobs` / `api-ops-mail` / `api-ops-business` / `api-ops-admin`.
+JS APIs (all ClusterIP, `pool=general` on Hetzner): `api-edge`, `api-data`, `api-public`, `api-tenant`, `api-ops`, `api-auth`, `api-fleet`, `api-mail`. Leftover TSX ops sites are gone; ops Host `/app/*` 302s to `control.cronnecture.com`.
 
 Host process on `k3s_server` (not a pod): **`cronnecture-job-worker`** claims `fleet_*` jobs. **`cronnecture-ansible-runner`** (`:18765`) runs allowlisted playbooks. Repair is host **`incident-watchdog`** (cron every 5 min, `FLEET_AUTOHEAL=1`; `make auto-heal`) plus leftover `/api/selfheal`. There is no MAS / Jarvis control loop.
 
@@ -99,9 +99,8 @@ Host process on `k3s_server` (not a pod): **`cronnecture-job-worker`** claims `f
 
 | Namespace | What runs |
 |-----------|-----------|
-| `mail` | Stalwart (1 replica on the control node; **hostPorts 25/587**) |
-| `identity` | Vaultwarden, Passbolt, Authentik (1), Cerbos (2) on `pool=general`. **Logto and Hanko deleted 2026-08-26.** See [identity.md](../operations/identity.md). **SSH stays Cloudflare Access SSH CA** |
-| `cronnecture-intelligence` | Overlay: master-orchestrator, cloudflare-manager, credential-manager, monitoring-system. Auto-heal / auto-scale **off** |
+| `mail` | Stalwart (1 replica on `[mail]` / Hostinger KVM4; **hostPorts 25/587**) |
+| `identity` | Vaultwarden, Passbolt, Authentik (1), Cerbos (1) on `pool=general`. **Logto and Hanko deleted 2026-08-26.** See [identity.md](../operations/identity.md). **SSH stays Cloudflare Access SSH CA** |
 | `previews` | Demo hub + per-UUID `pv-*` sites on `previews.cronnecture.com` |
 | `client-{slug}` | Per-tenant apps (live example: `client-noorddriveautos`) |
 | `monitoring` | Prometheus + Alertmanager + kube-state-metrics + 3/3 node-exporters. Applied 2026-08-26 (`make monitoring`). No Grafana. |
@@ -117,7 +116,7 @@ Created by ops API for each client:
 | `Namespace` | Isolation boundary |
 | `ResourceQuota` | CPU/memory/pod limits |
 | `NetworkPolicy` | Same-ns unrestricted; kube-system + platform only on app ports `80`/`8080`/`3000`; egress HTTPS/DNS/Postgres + registry `:5000`. UFW is the host perimeter |
-| `Deployment` + `Service` | Each app (and optional `site-gate` / `site-logto` for product SSO) |
+| `Deployment` + `Service` | Each app |
 | `IngressRoute` | Traefik routes per hostname |
 | `Job` | Kaniko image builds |
 
@@ -217,10 +216,11 @@ After `make add-node IP=…` (bootstrap → placement → inventory), the same `
 
 | Workloads | Scheduling |
 |-----------|------------|
-| Client apps | No nodeSelector → any untainted worker |
-| JS APIs + Python control-plane + operator UI | `nodeSelector: node-role.kubernetes.io/control-plane: "true"` (or hostname `cp-master-01`) |
-| Identity, marketing site, registry | `nodeSelector: pool=general` |
-| Multiple replicas | kube-scheduler spreads when multiple workers exist (Cerbos already 2×; Authentik stays 1×) |
+| JS APIs + Python control-plane | `pool=general` (`worker-general-01`) |
+| agent-core | control-plane node (`cp-master-01`) |
+| Dashboard, client-portal, marketing site, identity, registry | `pool=general` + preferred anti-affinity + topology spread (`ScheduleAnyway`). Platform HPA in `kubernetes/autoscaling.yaml` |
+| Client apps | `pool=general` + same spread. **No HPA** until billing suspend also scales the HPA |
+| New general VPS | `make pending-node` → add-node cron → zone labels + `sync-local-images.sh` so Never local tags exist on the worker |
 
 Ingress backend for tunnels: Traefik ClusterIP (`cf_client_ingress_backend` in `ansible/config/inventory/group_vars/all/ingress.yml`). Host `:80` is not the origin. Client connectors run on every node so Cloudflare can fail over.
 

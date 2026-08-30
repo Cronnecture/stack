@@ -49,9 +49,12 @@ Backups land in `/var/backups/cronnecture-fleet/<timestamp>/`:
 
 - etcd snapshot (via `k3s etcd-snapshot save`)
 - `cf_clients.yml` copy
+- **operator books** (`/var/lib/cronnecture/books` → `operator-books/`) plus control-plane **`/data/client-documents`** tar
 - **`emergency/`** bundle — `hosts.ini`, ingress routes, restore README ([RB-11](../runbooks/emergency-management.md))
 - kubectl node/pod snapshots
 - git HEAD reference
+
+Legal/commercial PDFs also copy live to R2 prefix `operator-books/{legal,commercial,startup-invoices,client-docs}/`. Operator ledger: `operator-books/ledger.json`.
 
 Manual run:
 
@@ -110,6 +113,10 @@ See [supabase.md](supabase.md) and [identity.md](identity.md). When scaling VPS/
 | `identity/passbolt.sql.gz` | Passbolt MariaDB (always on-cluster; `mariadb-dump`) |
 | `identity/SUPABASE.txt` | Marker when Postgres is external (Vaultwarden on `cronnecture-identity`; PITR deferred) |
 | `identity/*.sql.gz` | Only if `identity-postgres` STS still has replicas (rollback path) |
+| `gitea/gitea.sql.gz` | Gitea Postgres (in-ns `gitea-postgres` or Database_cluster DSN) |
+| `gitea/gitea-data.tar.gz` | Git objects from `gitea-data` PVC (`/data`, RWX NFS) |
+
+Gitea LFS/attachments already sit on R2 (`cronnecture-fleet-backups` prefix `gitea/`). See [gitea.md](gitea.md).
 
 **Restore Passbolt MariaDB** (from a fleet backup bundle):
 

@@ -2,7 +2,7 @@
 
 Per-client subscriptions via Stripe. Keys live in **ops → Business / Settings → Billing** (encrypted platform settings), not in git or Ansible vaults.
 
-**Live check (2026-08-21):** ops has `sk_live_` + webhook `https://ops.cronnecture.com/api/webhooks/stripe` (`we_1U5oabI1DriezaayH38kd3qR`). Stripe account **Cronnecture** `acct_1ThxGgI1Driezaay` (NL, EUR). `charges_enabled` and `payouts_enabled` are **on**. KVK `42140905` is on file; VAT is deferred. `self_serve_live_payments` stays **false** — do not flip it with `make business-go-live` (that script also requires a VAT id). Policy: pay-needed **immediately**; site suspend only after **90 days** unpaid. **Customer Portal:** `create_billing_portal_link` creates/reuses a live `billing_portal` configuration if none exists, so ops/portal “manage / pay” no longer depends on a Dashboard Activate click.
+**Live check (2026-08-27):** ops has `sk_live_` + webhook `https://ops.cronnecture.com/api/webhooks/stripe` (`we_1U5oabI1DriezaayH38kd3qR`). Stripe account **Cronnecture** `acct_1ThxGgI1Driezaay` (NL, EUR). `charges_enabled` and `payouts_enabled` are **on**. KVK `42140905` is on file; BTW-id and omzetbelastingnummer live in encrypted settings. `self_serve_live_payments` stays **false** — `make business-go-live` does **not** flip it. Policy: pay-needed **immediately**; site suspend only after **90 days** unpaid. Customer dunning mail includes Stripe `hosted_invoice_url`. Pause warnings at 60 and 83 days. **Customer Portal:** `create_billing_portal_link` creates/reuses a live `billing_portal` configuration. NL 21% exclusive tax rate (`nl_btw_21`) is attached when VAT is on file (not Stripe Tax automatic unless you enable it in Dashboard).
 
 ## Policy (locked)
 
@@ -39,26 +39,34 @@ While the live-payments flag is **false**, `/start` and the signup API return **
 
 ### KVK / VAT gate (live payments)
 
-**Keep `self_serve_live_payments=false` until you intentionally open public card checkout.** KVK and `charges_enabled` are already true. VAT is still deferred. Do not invent a VAT number. Live keys alone are not enough.
+**Keep `self_serve_live_payments=false` until you intentionally open public card checkout.** KVK, VAT, and `charges_enabled` are already true. Live keys alone are not enough.
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
 | `self_serve_enabled` | true | Public `/start` page on/off |
 | `self_serve_live_payments` | **false** | When false, public Checkout is blocked (contact / invoice / Tikkie). When true, requires `sk_live_…` |
-| `self_serve_max_tenants` | 8 | Concurrent self-serve tenant cap |
-| `self_serve_sites_suffix` | `sites.cronnecture.com` | Day-1 suffix; host is `sites-{slug}.cronnecture.com` (apex Universal SSL) until `self_serve_sites_zone_id` is set, then `{slug}.sites…` |
+| `self_serve_max_tenants` | 4 | Concurrent tenant cap on one general worker |
+| `self_serve_sites_suffix` | `sites.cronnecture.com` | Product suffix. **Public URL is always** `sites-{slug}.cronnecture.com` (apex Universal SSL on `*.cronnecture.com`). Nested `{slug}.sites.cronnecture.com` waits on a dedicated CF zone (`self_serve_sites_zone_id`). |
 | `self_serve_sites_zone_id` | (auto) | Cloudflare zone id for nested `*.sites…` TLS — requires dashboard “Add site” or token with `zone.create` |
 
 Do **not** invent VAT numbers or enable live charging before registration. Contact / invoice / Tikkie remain the default close path.
 
-### Recording KVK / VAT (Aug 18 go-live)
+### Recording KVK / VAT / omzetbelastingnummer
 
 ```bash
-make business-go-live KVK=……… VAT=NL……… LEGAL_NAME='…'
+make business-go-live KVK=42140905 VAT=NL005528822B26 OMZETBELASTING=322284338B01 LEGAL_NAME='Cronnecture'
 make business-go-live-status
 ```
 
-Stores registration ids in platform settings and sets `self_serve_live_payments=true` **only when** a `sk_live_` key is already configured. Stripe Dashboard live-mode clicks stay manual — see [go-live.md](../business/go-live.md).
+Stores registration ids in encrypted platform settings. Does **not** set `self_serve_live_payments=true` unless `--enable-live-gate`. Stripe Dashboard live-mode clicks stay manual — see [go-live.md](../business/go-live.md).
+
+### Handshake NoordDrive (€39.99, never Pilot €49.99)
+
+`mark_handshake_settled` / CRM Settle records Tikkie/bank first payment and calls `ensure_handshake_auto_billing`. Until **14 Sep 2026** the subscription may exist with `trial_end` = `stripe_start` (frozen). On/after that date Stripe auto-charges `standard_handshake` (`price_1U4SVFI1DriezaayQ4Q3XNQu`). Catalog checkout stays blocked for handshake clients — extras become draft invoices, not Pilot charges.
+
+### Annual prepay
+
+10× monthly. Catalog keys `stripe_live_annual_prices` / Settings `{pack}_annual`. Create yearly prices in Dashboard, then paste IDs. No percent coupons.
 
 ## Stripe Dashboard setup (required)
 

@@ -43,10 +43,10 @@ This runs:
 
 Production is never touched until staging passes smoke tests.
 
-**Prerequisite:** one-time staging setup ([RB-13](../runbooks/staging-and-release.md)) — Supabase project, staging vault, optional DNS.
+**Current leftover (no extra spend):** staging Supabase is gone. `make release` refuses staging unless `SKIP_STAGING=1`. Dump: `/home/dev/backups/db-cleanup-2026-08-26/cronnecture-staging-postgres.sql.gz` — never restore onto production `DATABASE_URL`. Founder must approve a new paid project before honest staging exists again.
 
 ```bash
-# Emergency production-only (skip staging)
+# Honest path until a new staging Supabase project exists
 SKIP_STAGING=1 make release
 
 # Prompt before production promote

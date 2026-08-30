@@ -25,7 +25,7 @@ Planes today: Welcome, Infrastructure (**Fleet** nav: Topology · Cluster · Nod
 | **Cloudflare** | Inventory, reconcile, cleanup (Cluster orphan sweep) | — | `cf-mint`, token rotation, `make cloudflare` |
 | **Business** | Mail, billing settings, documents | — | — |
 | **DMS** | Client DB connections / diagrams | — | — |
-| **Security / SIEM** | Security HQ + Wazuh link | Deep alert UX | `make siem` |
+| **Security** | Host audit / fail2ban | — | `make security-audit` |
 | **Automation** | Presets / backups panel | Full schedule editor | host crontab via `fleet_ops` |
 | **Self-heal** (Fleet) | Watchdog status, heal rates, policy chips, action timeline | — | `incident-watchdog.sh` / Makefile ops |
 | **Infrastructure** | Topology, cluster, nodes, self-heal | — | edit `hosts.ini` by hand |

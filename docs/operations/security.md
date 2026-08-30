@@ -59,8 +59,10 @@ The `ssh-gen` client flow signs certs with **per-application** CAs. Servers must
 **sshd drop-ins:** Debian `Include`s `/etc/ssh/sshd_config.d/*.conf` at the top of `sshd_config`. CA trust lives in `60-cloudflare-ca.conf` (global); `Match User` only in `99-cloudflare-access.conf` so it does not swallow the rest of the config. If `Include` is missing, CF SSH silently fails (`TrustedUserCAKeys none`) while emergency password/key login may still work.
 
 ```bash
-ssh dev@ssh-cp.cronnecture.com
+ssh -o ProxyCommand="cloudflared access ssh --hostname %h" dev@ssh-cp.cronnecture.com
 ```
+
+`~/.ssh/config` Match/`ssh-gen` is equivalent. Login user is **`dev`** (principal `svenbraad.work`). Do not use `root@ssh-cp`. Leave public `:22` open until this path succeeds.
 
 ## Cloudflare tokens (least privilege)
 
@@ -73,7 +75,7 @@ Minted by `make cf-mint` / `scripts/cloudflare/cf-mint-tokens.py`. Full inventor
 | `vault_cf_access_token` | Zero Trust Access (+ SSH apps) |
 | `vault_cf_waf_token` | WAF, rate limits, zone settings |
 | `vault_cf_workers_token` | Workers / maintenance page |
-| `vault_cf_block_token` | IP Access Rules (SIEM node only) |
+| `vault_cf_block_token` | Unused (Wazuh auto-block is gone) |
 | `vault_cf_readonly_token` | Read diagnostics |
 | `vault_cf_analytics_token` | Zone analytics |
 | `vault_cf_r2_storage_token` | R2 API |
@@ -186,7 +188,7 @@ Automatic via `baseline.yml`:
 - [ ] cloudflared connector running
 - [ ] unattended-upgrades configured
 - [ ] sysctl hardening applied
-- [ ] Wazuh agent enrolled (no-op while `[siem]` is empty)
+- [ ] Host auditd running (Wazuh is retired — see [siem-retired.md](siem-retired.md))
 
 ## Related docs
 

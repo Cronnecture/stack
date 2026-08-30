@@ -4,12 +4,11 @@ Source: `services/platform-api/`. Catalog: `config/policies/api-catalog.yml`.
 
 Each catalog API is a **separate image** (`platform-api-<name>:cutover`) and
 Deployment. They talk over ClusterIP. `api-data` is the only process with a
-database URL. JS `api-edge` owns NodePort **30080**. Ops is seven TSX sites that
-share `@cronnecture/ops-theme` but ship as separate images: home, clients, fleet
-(previews/backups/registry), jobs, mail, business, admin. Old plane prefixes
-(`/infrastructure`, `/business`, `/security`, `/settings`) redirect into those
-sites. Python is ClusterIP `control-plane-legacy` for unported APIs, webmail,
-and the customer portal.
+database URL. JS `api-edge` owns NodePort **30080**. Ops UI is the Next.js
+dashboard at `control.cronnecture.com`; leftover TSX ops sites are not deployed.
+Old plane prefixes (`/infrastructure`, `/business`, `/security`, `/settings`)
+302 to that dashboard. Python is ClusterIP `control-plane-legacy` for unported
+APIs, webmail, and the customer portal.
 
 Manifests are generated from the catalog (`npm run render-manifests`). Do not
 hand-edit `deploy/cutover.yaml`.
@@ -32,7 +31,7 @@ Still Python: leftover `/api/selfheal` (watchdog + event log), client delete, bi
 dashboard HTML. GitHub/Kaniko deploy and tunnel expose are JS (`api-ops`).
 Python `JsCatalogGuardMiddleware` returns 501 `js_owned` for catalog-owned
 routes so a direct ClusterIP hit cannot dual-write.
-`/crm` redirects to the TSX clients workspace.
+`/crm` 302s to the Next.js clients workspace.
 Ops auth (`/api/auth/me`, login, access-login, logout) is JS and issues the
 same `ops_admin_session` cookie as Python. Authentik customer SSO stays Python (`authentik_oidc.py`).
 

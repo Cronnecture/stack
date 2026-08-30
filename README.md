@@ -12,8 +12,7 @@ stack/
   apps/          marketing, portfolio, previews
   docs/          architecture, operations, platform, business, runbooks
   kubernetes/    mail, identity, operator YAML (keep-set; never wipe PVCs)
-  operator/      dashboard, agent-core, billing
-  overlays/      intelligence
+  operator/      dashboard, agent-core
   config/        stack-local config
   lib/           path helpers
   scripts/       stack deploy helpers
@@ -31,7 +30,6 @@ with this file.
 | Vault / Authentik / Passbolt / Cerbos | `identity` | node-tunnel → Traefik ClusterIP |
 | Webmail, website, customer portal | `platform` | same tunnel |
 | Operator UI + API | `cronnecture-system` | https://control.cronnecture.com |
-| Overlay | `cronnecture-intelligence` | in-cluster |
 
 WAN: UFW default deny. Public origin ports are mail 25/587. HTTP is the tunnel.
 

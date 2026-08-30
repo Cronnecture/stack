@@ -42,7 +42,7 @@ Mail admin: Manage → **Mail** at `https://ops.cronnecture.com/#/mail` (domains
 
 Publish/refresh: `make mail-dns` (or Ops → Business → Mail → **Apply DNS**). Deliverability check returns `ok: true` when these TXT records resolve.
 
-**Local caveat:** Debian **exim4** may listen on `127.0.0.1:25`. Probe Stalwart via the public IP (`nc -zv 31.97.126.9 25`) or the mail pod, not localhost.
+**Local caveat:** Debian **exim4** may listen on `127.0.0.1:25`. Probe Stalwart via the mail node (`nc -zv 72.60.32.178 25`) or the mail pod, not localhost.
 
 Verify:
 
@@ -51,7 +51,7 @@ make mail-smoke
 dig @1.1.1.1 MX cronnecture.com +short
 dig @1.1.1.1 TXT 202607r._domainkey.cronnecture.com +short   # expect v=DKIM1; k=rsa
 dig @1.1.1.1 TXT 202607e._domainkey.cronnecture.com +short   # expect v=DKIM1; k=ed25519
-nc -zv 31.97.126.9 25
+nc -zv 72.60.32.178 25
 ```
 
 **Automated probe (2026-07-26):**
@@ -76,7 +76,9 @@ Mailbox passwords are generated on create (shown once in Ops → Mailboxes), sto
 
 ## Marketing contact form → email
 
-Public `/contact` on cronnecture.com (and standalone main-site previews) posts to **`POST /api/public/contact`** on the control plane (`VITE_API_URL`, default `https://ops.cronnecture.com`). The API validates + honeypot + IP rate-limit, then SMTP-sends immediately to platform setting **`ops_notify_email`** (**To:** `info@cronnecture.com`; **From:** `noreply@`; **Reply-To:** the lead’s email). No Supabase `contact_leads` insert and no leads poller for this path. The older poller (`leads_notify_service`) remains only for any historical CRM inbox rows.
+Public `/contact` on cronnecture.com (and standalone main-site previews) posts to **`POST /api/public/contact`** on the control plane (`VITE_API_URL`, default `https://client.cronnecture.com`). The API validates + honeypot + IP rate-limit (5 / 15 min), inserts into Supabase **`contact_leads`** (service_role) and the CRM inbound prospect pipeline, SMTP-sends immediately to platform setting **`ops_notify_email`** (**To:** `info@cronnecture.com`; **From:** `noreply@`; **Reply-To:** the lead’s email), then auto-acks the lead from **`info@`**. Insert failure does not drop the ops email. The older poller (`leads_notify_service`) is watermarked past the new row so it does not double-mail ops. Portal referrals use the same pipeline with `source=referral`.
+
+Client comms (down/recovered, onboarding sequence, monthly ops report, maintenance 48h/1h, expansion cap) also go through this SMTP path (`noreply@` / `info@`). Presets: **Client comms (hourly)** and **Monthly client ops report**.
 
 ## Fleet / ops alerts
 
@@ -117,7 +119,7 @@ PTR affects **outbound** mail only (Gmail/Yahoo spam scoring). It does **not** b
 | Forward DNS | `mail.{zone}` A → same IP |
 | Reverse DNS (PTR) | IP → `mail.{zone}` |
 
-**Status (2026-07-26):** public PTR for `31.97.126.9` is `mail.cronnecture.com.` — aligned with HELO.  
+**Status (2026-08-27):** public PTR for `72.60.32.178` is `mail.cronnecture.com.` — aligned with HELO. `31.97.126.9` PTR is `cp-master-01.cronnecture.com.`  
 Hostinger sometimes defaults PTR to the VPS hostname (`cp-master-01`); that triggers a **PTR mismatch** warning in ops until fixed.
 
 ### Steps at Hostinger (if PTR drifts)

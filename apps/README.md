@@ -15,4 +15,6 @@ make marketing    # build apps/marketing, push NodePort 30500, roll cronnecture-
 make portfolio    # build apps/portfolio and push the same registry
 ```
 
+Pushes to `main` on those remotes also auto-deploy: GitHub webhook → Kaniko. Website rolls `platform/cronnecture-website` (`cronnecture.com`). Portfolio rebuilds the registry image and any live preview that tracks that repo.
+
 Local `k3s ctr import` is master-only. Workers pull `fleet-registry` — the script pushes `127.0.0.1:30500/platform/…`.

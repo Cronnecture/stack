@@ -99,7 +99,7 @@ Former pilot `decinemaat` / `cronnecture.eu` was Access-gated for rehearsal (ten
 
 **Website care includes** platform subdomain hosting. **Custom domain is an upgrade** (ops-assisted cutover; not required on day 1).
 
-**Public Stripe Checkout stays off** while `self_serve_live_payments=false`. `/start` shows contact UI only. After you flip that flag (KVK + `charges_enabled` are already true; VAT still deferred), optional path: `/start` → Stripe Checkout → webhook provision (`/api/public/self-serve/*`).
+**Public Stripe Checkout stays off** while `self_serve_live_payments=false`. `/start` shows contact UI only. KVK and VAT are on file; do **not** flip that flag unless you want public cards. Optional later path: `/start` → Stripe Checkout → webhook provision (`/api/public/self-serve/*`).
 
 ### B) Migrate / Business / Complete (same human path)
 
@@ -124,6 +124,18 @@ Say this the same way every time:
 - After 90 days unpaid → maintenance page + workloads suspended until paid.
 - Platform tenant `cronnecture` is never billed/suspended.
 - Public catalog: Website **€49.99** / Webshop **€119.99** / Portal **€129.99** per month excl. BTW. Handshake NoordDrive stays €39.99.
+
+---
+
+## Blocked without a second compute worker
+
+**MSP / reseller white-label** is not on the 3-server fleet. It needs a second `compute_general` worker (and typically ≥5 sites). Do not sell it, do not wire a second portal brand, do not put AddNode in the customer portal. Dedicated compute is a **support quote**.
+
+Also blocked on this fleet (by design, not a missing form):
+
+- Public Stripe Checkout (`self_serve_live_payments` stays false until VAT + capacity policy are explicit)
+- HubSpot / Intercom / Statuspage.io / SendGrid / a marketing blog
+- Invented NoordDrive case studies (referral ask in this doc is opt-in only)
 
 ---
 

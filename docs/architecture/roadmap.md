@@ -34,12 +34,12 @@ Locked priorities as of **2026-07-26**.
 
 ## Phase 1.5 — Safe deploys ✅
 
-- [x] Staging path exists (`make deploy-staging`, `staging-ops.{zone}`). **Live staging CP is down** — Supabase project `cronnecture-staging` was deleted 2026-08-26; recreate before `make release` is honest again.
+- [x] Staging path exists (`make deploy-staging`, `staging-ops.{zone}`). **Live staging CP is down** — Supabase project `cronnecture-staging` was deleted 2026-08-26; dump at `/home/dev/backups/db-cleanup-2026-08-26/cronnecture-staging-postgres.sql.gz` (do not restore onto prod). `make release` refuses empty staging URL unless `SKIP_STAGING=1`. Recreate is a paid founder decision.
 - [x] Zero-downtime production rolling deploy
 - [x] Production 2-replica control-plane (live is **3**)
 - [x] Cloudflare edge maintenance (Worker + KV)
 - [x] `make release` flow
-- [x] Second compute node (`worker-general-01` + `worker-general-02`) — **done 2026-08**. Next HA purchase is etcd quorum, not another worker ([RB-10](../runbooks/scale-to-ha.md)).
+- [x] Dedicated mail node (`mail-01`) — **done 2026-08**. Next HA purchase is etcd quorum, not another worker ([RB-10](../runbooks/scale-to-ha.md)).
 - [ ] HA control plane / edge at ≥5–7 nodes via placement policy ([resilience.md](resilience.md) V-04/V-05) — needs more hosts
 - [ ] Identity Supabase **PITR** on `cronnecture-identity` (or equivalent) — **deferred** with HA / more VPS budget (~€100/mo; not urgent; current survival = Passbolt dumps + fleet→R2 + break-glass + provider daily backups if plan includes them). See [identity.md](../operations/identity.md), [backup.md](../operations/backup.md)
 - [ ] Control-plane monolith split (further router/service peel beyond current strangler) — deferred; freeze list in [freeze-list.md](freeze-list.md)

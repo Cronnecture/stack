@@ -2,6 +2,8 @@
 
 Runbook **RB-13**.
 
+**Current leftover (2026-08-26, no extra spend):** the staging Supabase project `cronnecture-staging` was deleted. `vault_platform_database_url` in the staging vault is **empty**. Dump: `/home/dev/backups/db-cleanup-2026-08-26/cronnecture-staging-postgres.sql.gz` — **do not restore it onto production `DATABASE_URL`**. Recreating a project is a paid decision the founder must approve. Until then `make release` **refuses** staging unless `SKIP_STAGING=1`.
+
 One-time staging sandbox setup, then the daily **staging → smoke → production** release flow.
 
 **Security note:** staging is a UX sandbox on the **same cluster** (shared registry, mail, CF tokens unless you override vault). Write-guards prevent staging from mutating prod clients; it is **not** a tenant isolation boundary.

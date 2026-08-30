@@ -20,9 +20,9 @@ sudo k3s kubectl get nodes -L pool,node-class,node-role.kubernetes.io/control-pl
 
 | Node | Role | Labels (typical) |
 |------|------|------------------|
-| `cp-master-01` (`31.97.126.9`) | server | control-plane / etcd |
+| `cp-master-01` (`31.97.126.9`) | server | control-plane / etcd (tainted NoSchedule) |
 | `worker-general-01` (`135.181.58.45`) | agent | `pool=general` |
-| `worker-general-02` (`72.60.32.178`) | agent | `pool=general` |
+| `mail-01` (`72.60.32.178`) | agent | `pool=mail` (tainted; Stalwart only) |
 
 API server `:6443` is **not** exposed to the public internet — cluster peers only (`k3s_server.yml`).
 
@@ -69,8 +69,8 @@ make clients        # client tunnel connectors (Ansible, not pure K8s)
 
 | Resource | Replicas | Notes |
 |----------|----------|-------|
-| `api-edge` + JS APIs | 1 each | **`api-edge` owns NodePort 30080**. `api-data` is the only JS process with a DB URL |
-| `control-plane` | 2 | FastAPI leftover + customer portal (ClusterIP `control-plane-legacy`); PDB; leader election; 2 uvicorn workers; requests `100m`/`256Mi`, limits `1` CPU / **`10Gi`** memory |
+| `api-edge` + JS APIs | 1 each | **ClusterIP**. Service `control-plane` → `api-edge`. `api-data` is the only JS process with a DB URL. HTTP NodePort 30080 is closed. |
+| `control-plane` | 3 | FastAPI leftover + customer portal (ClusterIP `control-plane-legacy`); PDB; leader election; 2 uvicorn workers; requests `250m`/`512Mi`, limits `4` CPU / **`10Gi`** memory |
 | `fleet-registry` | 1 | NodePort 30500; R2 when `vault_registry_s3_*` set, else PVC |
 | `cronnecture-website` | 1 | Public marketing hostnames |
 | `maintenance-page` | 1 | Billing/maintenance origin |
@@ -80,7 +80,7 @@ Control plane scheduling:
 
 ```yaml
 nodeSelector:
-  node-role.kubernetes.io/control-plane: "true"
+  pool: general
 ```
 
 Probes: liveness/startup `/api/health/live`; readiness `/api/health/ready` (DB).
@@ -89,9 +89,18 @@ Probes: liveness/startup `/api/health/live`; readiness `/api/health/ready` (DB).
 
 | Resource | Replicas | Notes |
 |----------|----------|-------|
-| `stalwart` | 1 | Control-plane node; TCP probes + startupProbe; PVC for queue/data |
+| `stalwart` | 1 | `mail-01` (`pool=mail`); hostPorts 25/587; hostPath `/var/lib/cronnecture/stalwart`; TCP probes + startupProbe |
 
 Apply: `make mail`
+
+### `git`
+
+| Resource | Replicas | Notes |
+|----------|----------|-------|
+| `gitea` | HPA 2–4 | ClusterIP `:3000`. HTTPS via Traefik + CF tunnel (`git.cronnecture.com`). Git SSH off. Sessions in Postgres. Git objects on **RWX** `nfs-rwx`. Required anti-affinity when ≥2 `compute_general` Ready. |
+| `gitea-postgres` | 1 (→0 when `[db]` Ready) | Metadata only until Database_cluster. |
+
+Apply: `make gitea`. Day-2: [gitea.md](../operations/gitea.md).
 
 ### `monitoring`
 
@@ -123,7 +132,21 @@ Created by ops API:
 
 ### `kube-system`
 
-Traefik, CoreDNS, flannel, metrics-server (k3s defaults).
+Traefik, CoreDNS, flannel, metrics-server (k3s defaults). metrics-server is required for HPA.
+
+## Pod autoscaling (platform)
+
+`kubernetes/autoscaling.yaml` (applied by `make stack`):
+
+| Target | min | max | Why not client sites |
+|--------|-----|-----|----------------------|
+| `cronnecture-system/dashboard` | 2 | 2 | Operator UI — max 2 until a second compute worker |
+| `platform/client-portal` | 2 | 2 | Customer hub — max 2 until a second compute worker |
+| `platform/cronnecture-website` | 1 | 2 | Marketing — max 2 until a second compute worker |
+
+Client apps get topology spread + `pool=general` so a new worker is used, but **no HPA** until billing suspend also scales the HPA (otherwise `minReplicas` undoes scale-to-zero). Packed pool → `make scale-hint` → `make pending-node`. New general workers also get zone labels (`fleet_region` / `fleet_provider`) and a copy of the Never operator images (`make sync-local-images`). See [RB-10](../runbooks/scale-to-ha.md) Phase 1.5.
+
+Rancher Fleet / CAPI / Turtles leftovers were uninstalled 2026-08-27 (controllers, idle namespaces, leftover CRDs). Do not mass-delete `k3s.cattle.io` / `helm.cattle.io` — those are k3s HelmChart and addon APIs.
 
 ## Traefik ingress
 
@@ -150,7 +173,7 @@ sudo k3s kubectl -n client-{slug} get ingressroutes.traefik.io
 | Service mesh | None (kube-proxy + Traefik) |
 | NetworkPolicy | Per-client namespace |
 
-Compute node publishes **80/443** for tunnel ingress backends.
+Compute node publishes **no public HTTP**. Tunnels originate at Traefik ClusterIP `10.43.125.134:80`. The only public origin ports are mail 25/587 on `mail-01`.
 
 ## Storage
 

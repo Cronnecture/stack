@@ -1,0 +1,15 @@
+# Gitea keep-set. Cluster source of truth is the Ansible role
+# (roles/gitea → /var/lib/rancher/k3s/server/manifests/gitea.yaml).
+# Never delete Secret gitea-secrets or PVCs gitea-postgres / gitea-data.
+#
+# Topology: HPA 2–4 HTTP replicas (Service ClusterIP) + 1 Postgres primary
+# until [db] is Ready. Git objects on RWX nfs-rwx (NFS on first general worker).
+# LFS/attachments use R2. Do not schedule onto cp-master-01 or mail-01.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: git
+  labels:
+    cronnecture.io/role: git
+    cronnecture.com/managed-by: stack
+    pod-security.kubernetes.io/enforce: baseline

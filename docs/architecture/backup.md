@@ -14,7 +14,7 @@
 - **config** — small: `cf_clients`, emergency inventory snippets  
 - **etcd** — medium: snapshot log + node inventory at capture time  
 - **platform** — medium: ingress/deploy exports  
-- **full** — large: all of the above + retention prune + R2 required for job success when R2 configured  
+- **full** — large: all of the above + identity dumps + mail + operator books + control-plane client-documents + retention prune + R2 required for job success when R2 configured  
 
 Naming: `cronnecture-fleet-{type}-{YYYYMMDD-HHMMSS}` (UTC).
 

@@ -1,6 +1,6 @@
 # Acquisition engine (solo founder)
 
-**Primary bet:** inbound brand on [cronnecture.com](https://cronnecture.com/) → **contact / email** (`#contact` or `support@cronnecture.com`) → invoice (or Tikkie in ops/email only) → warm `contact_leads` nurture in ops CRM. No public Stripe face until KVK; no cold-email blasts, no ad spend, no fake social proof.
+**Primary bet:** inbound brand on [cronnecture.com](https://cronnecture.com/) → **contact / email** (`#contact` or `support@cronnecture.com`) → invoice (or Tikkie in ops/email only) → warm `contact_leads` nurture in ops CRM. No public Stripe Checkout (`self_serve_live_payments` stays false); no cold-email blasts, no ad spend, no fake social proof.
 
 **Public marketing tone:** restore brand hero (“Infrastructure that stays secure.” / NL equivalent). Public prices are the catalog (Website €49.99 / Webshop €119.99 / Portal €129.99) — no list/Pilot strikethrough. Do **not** put Tikkie or “startup until registered” language on the public site.
 
@@ -22,13 +22,13 @@ cronnecture.com (brand + Contact CTA)
               (Stripe Checkout only when self_serve_live_payments=true)
 ```
 
-**Keep `self_serve_live_payments=false` until you want public card Checkout.** KVK and Stripe `charges_enabled` are already true. VAT is deferred. Live keys are in ops. Public marketing must not push Stripe Checkout yet.
+**Keep `self_serve_live_payments=false` until you want public card Checkout.** KVK, BTW-id, and Stripe `charges_enabled` are already true. Live keys are in ops. Public marketing must not push Stripe Checkout yet.
 
 ---
 
 ## Go-live flip (optional self-serve after KVK)
 
-1. Register KVK/VAT; run `make business-go-live KVK=… VAT=… LEGAL_NAME=…` — see [go-live.md](go-live.md).
+1. Register KVK/VAT/omzetbelastingnummer; run `make business-go-live KVK=… VAT=… OMZETBELASTING=… LEGAL_NAME=…` — see [go-live.md](go-live.md). That script does **not** open public Checkout.
 2. In Stripe Dashboard: confirm live keys + webhook `whsec` + Customer Portal activated. Catalog prices already match cronnecture.com (do not reuse `PILOT30PACKS`).
 3. Paste `sk_live_…` + live webhook secret into ops **Settings → Billing**.
 4. Set **`self_serve_live_payments=true`** only when ready to offer public card Checkout.

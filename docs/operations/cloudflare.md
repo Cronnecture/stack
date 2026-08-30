@@ -1,6 +1,6 @@
 # Cloudflare integration
 
-Cloudflare is the edge layer: DNS, TLS, WAF, rate limits, Zero Trust Access, tunnels, and automatic IP blocking from Wazuh.
+Cloudflare is the edge layer: DNS, TLS, WAF, rate limits, Zero Trust Access, and tunnels.
 
 ## Configuration files
 
@@ -27,7 +27,6 @@ make cf-mint ARGS="--zone cronnecture.com"
 | `vault_cf_tunnel_token` | Tunnel create/configure |
 | `vault_cf_access_token` | Zero Trust Access apps |
 | `vault_cf_waf_token` | WAF, rate limits, zone settings |
-| `vault_cf_block_token` | IP Access Rules (SIEM node only) |
 | `vault_cf_zone_id` | Platform zone ID |
 
 Bootstrap token is **revoked** after minting. See [RB-06](../runbooks/cloudflare-tokens.md).
@@ -67,11 +66,12 @@ Defined in `cf_portals.yml` (`cf_admin_portals` + `cf_public_sites`):
 | Portal | URL | Backend | Access |
 |--------|-----|---------|--------|
 | Client Control Plane | `ops.cronnecture.com` | k3s_server:30080 | CF Access → **Authentik only** (emails from `ops_users`) → ops session + RBAC — [operator-access.md](operator-access.md) |
+| Cronnecture Control | `control.cronnecture.com` | k3s_server:30080 | CF Access → **Authentik only** (ops). Do not skip_access. |
+| Gitea | `git.cronnecture.com` | Traefik → gitea.git:3000 | **`skip_access` + `purge_access_apps`** — Authentik OIDC inside Gitea (same IdP as client hub). Not Cloudflare Access. |
 | Staging Control Plane | `staging-ops.cronnecture.com` | k3s_server:30081 | Same as ops (when staging enabled) |
 | Cronnecture Mail | `webmail.cronnecture.com` | k3s_server:30080 | CF Access → Authentik → webmail SPA (`/webmail`) |
 | Client customer portal | `client.cronnecture.com` | k3s_server:30080 | **`skip_access` + `purge_access_apps`** — Logto gates hub (no host/path Access; avoids Error 1043) |
 | Vaultwarden | `vault.cronnecture.com` | k3s_server:30110 | **`skip_access` + `purge_access_apps`** — public; Bitwarden apps need no Access cookie |
-| Wazuh | `wazuh.cronnecture.com` | siem:5601 (HTTPS) | CF Access |
 | Traefik dashboard | `traefik.cronnecture.com` | k3s_server:9000 | when enabled |
 | Rancher | `rancher.cronnecture.com` | k3s_server:443 | when enabled |
 | Marketing site | `cronnecture.com`, `www`, `cronnecture.nl`, `www.cronnecture.nl` | compute_general:80 (Traefik) | public |
@@ -86,6 +86,24 @@ Ops Access bypass paths (no CF session):
 Allowed operator emails: `cf_access_allowed_emails` in `cloudflare.yml`.
 
 **Not product DNS:** `insights.*`, `portal.cronnecture.com` — do not recreate.
+
+## Client platform sites (day-1 hostname)
+
+Public pattern (locked): **`https://sites-{slug}.cronnecture.com`**
+
+Staging: **`https://preview-{slug}.cronnecture.com`**
+
+Both are one-label hosts under the apex, so Free-plan Universal SSL (`*.cronnecture.com`) covers them. They are **not** `{slug}.sites.cronnecture.com` until a dedicated `sites.cronnecture.com` Cloudflare zone exists.
+
+Path: visitor → Cloudflare (proxied CNAME on the apex) → **node-tunnel** (`*.cronnecture.com` catch-all, no Access) → Traefik ClusterIP → IngressRoute `Host()` in `client-{slug}`.
+
+Custom domains (NoordDrive `noorddriveautos.com`, future customer zones) stay on **client-{slug}** tunnels. Do not put `sites-*` on those tunnels.
+
+Control-plane upserts the per-slug CNAME. Ansible `make cloudflare` keeps the wildcard tunnel rule (`skip_dns` so a `*` record is not published).
+
+**Ingress order:** Cloudflare Tunnel is first-match. `*.cronnecture.com` must sit **after** every exact hostname, especially `ssh-cp` / `ssh-mail-01` / `ssh-worker-general`. If the wildcard is first, Access still mints a short-lived SSH cert, then the session is sent to Traefik HTTP and fails. `make cloudflare` sorts wildcards last.
+
+**SSH origins:** `ssh://<inventory ansible_host>:22` so any `node-tunnel` connector can dial the peer. Never `ssh://127.0.0.1:22` on a shared tunnel.
 
 ## Node tunnel (`node-tunnel`)
 
@@ -183,22 +201,6 @@ Declared platform hostnames come only from `cf_portals.yml` (see table above). I
 Protections (always): `node-tunnel`, declared portals/SSH, empty/reuse zone `cronnecture.eu`. See [overview.md](overview.md#scheduled-cf-orphan-cleanup-dns--access--tunnels).
 
 See [control-plane.md](../platform/control-plane.md) for inventory APIs. Customer hub paths: [client-portal.md](../platform/client-portal.md).
-
-## Wazuh auto-block
-
-When `cf_autoblock_enabled: true`:
-
-1. Wazuh alert level ≥ `cf_autoblock_min_alert_level` (default 10)
-2. Active response on SIEM calls CF API with `vault_cf_block_token`
-3. Account-level IP Access Rule with note `wazuh-autoblock-<timestamp>`
-4. Hourly `cloudflare.yml` prunes rules older than 24h
-
-Deploy SIEM integration:
-
-```bash
-make siem
-make cloudflare
-```
 
 ## GitHub OAuth for ops UI
 

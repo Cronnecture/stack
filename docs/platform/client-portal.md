@@ -8,13 +8,13 @@ Tenant is selected from the product OIDC session (`cp_oidc_session`; `cp_logto_s
 
 The UI is the Next.js app [Cronnecture/client-portal](https://github.com/Cronnecture/client-portal). Backend contract: `GET /portal` (PortalSnapshot) and `POST /portal/actions`. See that repo’s `docs/INTEGRATION.md`.
 
-## What clients see
+Legacy HTML under `services/control-plane/static/customer-portal/` is **not** the hub clients open. Do not ship features there.
 
-Lightweight shell (`static/customer-portal/`) — **account / business only** (no website builder, Deploy, or AI site tools):
+## What clients see
 
 | Section | Content |
 |---------|---------|
-| Overview | Account health, billing snapshot, domain/site summary, jump links |
+| Site | Preview canvas, file editor, Publish / Update. Public URL `sites-{slug}.cronnecture.com` until a custom domain. |
 | Account | Profile, teammate Access invites, status-page toggle, custom-domain upgrade |
 | Billing & invoices | Plan status, recent Stripe invoices, pay / Customer Portal link |
 | Payments | Connect Mollie / Stripe for apps + **checkout branding** (logo, colors, product defaults, success/cancel URLs) with live preview |
@@ -38,7 +38,9 @@ Lightweight shell (`static/customer-portal/`) — **account / business only** (n
 5. Subscription, pack, and add-ons stay on the **Client** row + Stripe Customer linked to that email.
 6. Active pack → Billing shows **Upgrade** (current pack locked). Upgrades call Stripe subscription update with proration (pay-the-difference), not a full new-customer Checkout. Downgrades → contact / period-end messaging.
 
-**Not in the client portal:** website builder, Deploy, AI site generation, previews, sandbox probes, or publish — those stay on **ops CRM** (`ops.cronnecture.com`).
+**In the client portal:** Website is the builder — canvas, file editor, Bring files, Publish / Update. Pipeline (Kaniko, registry) stays on ops; clients do not see it.
+
+**Not in the client portal:** AI site generation, sandbox probes, or ops-only rollback tooling (those stay on **ops CRM**).
 
 This is **not** the old Insights extension marketplace. Do not advertise `insights.*` hostnames to clients.
 

@@ -36,7 +36,7 @@ CRM Apps → from-repo / New site (bootstrap) / Rebuild & deploy
 
 - **Rebuild & deploy** (`mode=rebuild`): rescan → Kaniko → roll out.
 - **Roll image** (`mode=roll`): redeploy last recorded image; no rebuild.
-- GitHub must be connected (OAuth or PAT) in ops Settings.
+- GitHub must be connected (OAuth or PAT) in ops Settings **only for platform sites and previews**. Customer deploys use a **per-client deploy key**, not the platform PAT.
 
 ---
 
@@ -244,7 +244,7 @@ Prerequisites: client zone **active**, tunnel present.
 | Other subdomain | `{sub}.{domain}` only |
 | Unset | Deploy succeeds; expose later via Apps → Expose |
 
-Optional Cloudflare Access on the **site exposure** (Authentik allowlist) — separate from the customer portal, which is Logto-only.
+Optional Cloudflare Access on the **site exposure** (Authentik allowlist) — separate from the customer portal, which is Authentik OIDC (`cp_oidc_session`).
 
 If zone/tunnel is not ready at deploy time, the job logs *Skipping auto-expose* — re-expose from the UI when DNS is active.
 
@@ -264,7 +264,7 @@ Public traffic: Cloudflare → client tunnel → Traefik → Service → pod. Or
 | Security fail: `.env` in repo | Secrets committed | Remove from git; keep `.env.example` only |
 | SPA deep links 404 | No nginx `try_files` | Use fleet Dockerfile / `.fleet/nginx-spa.conf` |
 | Port probe fails / CrashLoop | Listen port ≠ `app.port` / EXPOSE | Align listen, EXPOSE, and CRM port (80 static, 3000 Node) |
-| Auto-expose skipped | Zone pending / no tunnel | Finish NS (RB-05); then Expose |
+| Auto-expose skipped | Hub tenant had no client tunnel / zone | Day-1 hosts now publish on node-tunnel: `sites-{slug}.cronnecture.com` |
 | 502 on hostname | Tunnel / Traefik / wrong backend | Connector install; check ingress; job logs |
 | Monorepo wrong context | Nested `package.json` | Set build context / Dockerfile path in from-repo |
 | SQLite warning | File DB in container | Migrate to client `DATABASE_URL` / Supabase |

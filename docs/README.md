@@ -56,6 +56,7 @@ folder is the human reference.
 | [mail.md](operations/mail.md) | Stalwart, DNS, PTR |
 | [mail-freeze.md](operations/mail-freeze.md) | Frozen mail addresses and store |
 | [identity.md](operations/identity.md) | Vaultwarden, Passbolt, Authentik, Cerbos (Logto and Hanko retired) |
+| [gitea.md](operations/gitea.md) | In-cluster Gitea (tenant git, HTTPS, 2 replicas) |
 | [cloudflare.md](operations/cloudflare.md) | Edge policy, portals, client tunnels |
 | [supabase.md](operations/supabase.md) | Control-plane database |
 
@@ -97,9 +98,9 @@ Step-by-step procedures: [runbooks/README.md](runbooks/README.md). IDs `RB-01`�
 
 | Host | Inventory | Group | Role |
 |---|---|---|---|
-| `31.97.126.9` | `cp-master-01` | `k3s_server` | Only k3s server / etcd. Ansible. Mail SMTP. |
-| `135.181.58.45` | `worker-general-01` | `compute_general` | Hetzner HEL1 — general worker |
-| `72.60.32.178` | `worker-general-02` | `compute_general` | Hostinger FRA — general worker |
+| `31.97.126.9` | `cp-master-01` | `k3s_server` | Hostinger KVM8 — etcd only (after taint) |
+| `135.181.58.45` | `worker-general-01` | `compute_general` | Hetzner HEL1 — primary compute |
+| `72.60.32.178` | `mail-01` | `mail` | Hostinger KVM4 — Stalwart (`mail.cronnecture.com`) |
 
 HTTP origin is Traefik ClusterIP (`10.43.125.134:80`), not host `:80`.
 Do not add a second k3s server (1→2 etcd is split-brain). HA is 1→3 only.

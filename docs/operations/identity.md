@@ -86,7 +86,7 @@ Details: [backup.md](backup.md#off-box-break-glass-pack). Vault password (`~/.an
 | Data store | Where | Notes |
 |------------|-------|--------|
 | Authentik | In-cluster `identity-postgres` DB `authentik` | Migrated off Supabase 2026-08-26 |
-| Hanko | In-cluster `identity-postgres` DB `hanko` (orphaned) | Retired 2026-08-26; dump is best-effort |
+| **Hanko** | In-cluster `identity-postgres` — **database dropped 2026-08-27** (dump in `/home/dev/backups/db-cleanup-2026-08-26`) | Retired 2026-08-26; cluster objects deleted |
 | Vaultwarden | Supabase DB `vaultwarden` | Attachments PVC unchanged |
 | Logto | **Deleted 2026-08-26** | Do not restore without a dedicated cutover |
 | Passbolt | On-cluster MariaDB | CE is MySQL/MariaDB only — not Postgres |
@@ -181,7 +181,7 @@ Product SSO is Authentik (`authentik_oidc.py`). Canonical bridge: `/api/auth/oid
 
 Logto is gone. Do **not** point Google OAuth or new client apps at `id.cronnecture.com`. Product SSO is Authentik at `auth.cronnecture.com`. Canonical bridge: `/api/auth/oidc/login` → `/api/auth/oidc/callback` with cookie `cp_oidc_session`. `/api/auth/logto/login` and `cp_logto_session` remain aliases.
 
-Customer hub: `client.cronnecture.com` (Access off, invite-only). Site-gate for NoordDrive is oauth2-proxy (`site-logto`) → Authentik; cookie `_site_logto`.  
+Customer hub: `client.cronnecture.com` (Access off, invite-only). NoordDrive shop is public (no site-gate). Cookie `_site_logto` is frozen.  
 
 ## Ops notes
 

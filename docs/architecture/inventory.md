@@ -34,7 +34,7 @@ Use **canonical hostnames** with `ansible_host` for the public IP. Optional
 ```
 cp-master-01 ansible_host=31.97.126.9 fleet_provider=hostinger fleet_region=fra
 worker-general-01 ansible_host=135.181.58.45 fleet_provider=hetzner fleet_region=hel1
-worker-general-02 ansible_host=72.60.32.178 fleet_provider=hostinger fleet_region=fra
+mail-01 ansible_host=72.60.32.178 fleet_provider=hostinger fleet_region=fra
 ```
 
 Common regions: Hetzner `hel1` / `fsn1` / `nbg1`; Hostinger `fra` / `ams` / `lon`.
@@ -43,12 +43,11 @@ Set at bootstrap via Ops **Fleet → Nodes** or `make add-node IP=… PROVIDER=h
 The `fleet_identity` role (via `make baseline`) sets the OS hostname to match inventory so k3s node names align with ops diagrams. After renaming, remove legacy node objects once: `kubectl delete node <old-name>`.
 
 ```
-[k3s_server]          → control plane nodes
-[compute_general]     → default worker pool
-[compute_cpu]         → CPU-optimized pool (tainted)
-[compute_memory]      → memory-optimized pool (tainted)
-[edge_lb]             → HAProxy + keepalived
-[siem]                → Wazuh managers
+[k3s_server]          → control plane / etcd (Hostinger KVM8)
+[compute_general]     → app pool (Hetzner is the primary worker)
+[mail]                → Stalwart SMTP/IMAP (Hostinger KVM4 today)
+[edge_lb]             → HAProxy + keepalived (empty)
+[siem]                → Wazuh retired (empty)
 [new_nodes]           → staging for bootstrap only
 ```
 
@@ -69,11 +68,9 @@ Aggregate groups:
 | `group_vars/all/cf_clients.yml` | Runtime client tunnel registry (API-generated; **Postgres is source of truth**) |
 | `group_vars/k3s_cluster.yml` | k3s version, flannel, control plane toggle |
 | `group_vars/k3s_server.yml` | Control-plane labels, firewall |
-| `group_vars/compute_general.yml` | Pool label, ingress ports 80/443 |
-| `group_vars/compute_cpu.yml` | Taints, CPU pool label |
-| `group_vars/compute_memory.yml` | Taints, memory pool label |
+| `group_vars/compute_general.yml` | Pool label, Traefik ServiceLB |
+| `group_vars/mail.yml` | Mail taint, SMTP 25/587 |
 | `group_vars/edge_lb.yml` | VIP, HAProxy backends |
-| `group_vars/siem.yml` | Wazuh-specific settings |
 
 ## Key variables
 
@@ -109,7 +106,7 @@ Aggregate groups:
 
 | File | Used by |
 |------|---------|
-| `config/policies/placement.yml` | `autoplace.py`, `rebalance.sh` |
+| `config/policies/placement.yml` | `place-node.py`, `rebalance.sh` |
 | `config/policies/cloudflare.yml` | `cloudflare.yml` playbook |
 
 ### Placement tiers (summary)
@@ -120,7 +117,7 @@ Aggregate groups:
 | `siem` | ≥3 | 1; ≥10 → 2 |
 | `edge_lb` | ≥5 | 1; ≥8 → 2 |
 
-Compute pool selection: memory-heavy → `compute_memory`; many vCPUs → `compute_cpu`; else `compute_general`.
+Compute pool: everything that is not master/mail is `compute_general`. Add mail with `CLASS=mail`.
 
 ## Vault secrets
 

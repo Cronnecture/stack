@@ -40,7 +40,7 @@ Modules (add onto website): **Webshop** +€70/mo · build €800 · move €0. 
 
 Handshake (NoordDrive only, not public): setup **€79.99** + monthly **€39.99**.
 
-**Annual option (optional later):** 10× monthly (≈2 months free) paid upfront — do **not** lead with this until KVK and charges are on.
+**Annual option:** 10× monthly (Website €499.90 / Webshop €1,199.90 / CMS €1,299.90) paid upfront — no percent coupons. Live yearly Stripe `price_…` IDs are empty until one Dashboard click; paste into Settings `stripe_pack_prices` as `{pack}_annual`.
 
 **Minimum pack for first clients:** Website is OK. Prefer **Website + webshop** when they already take card payments elsewhere.
 
@@ -50,7 +50,7 @@ Handshake (NoordDrive only, not public): setup **€79.99** + monthly **€39.99
 
 **Public CTA (pre-KVK):** [cronnecture.com/#contact](https://cronnecture.com/#contact) or `support@cronnecture.com` → invoice / Tikkie → ops provision. **Custom domain is an upgrade** — request from the customer portal (or contact); ops completes cutover via [RB-05](../runbooks/onboard-client.md).
 
-**Optional self-serve after you choose to take public cards:** [client.cronnecture.com/start](https://client.cronnecture.com/start) → Stripe Checkout when `self_serve_live_payments=true` (still **false** on 2026-08-19). KVK and Stripe charges are already enabled. Do not invent VAT numbers. Do not run `make business-go-live` just to flip the flag.
+**Optional self-serve after you choose to take public cards:** [client.cronnecture.com/start](https://client.cronnecture.com/start) → Stripe Checkout when `self_serve_live_payments=true` (still **false**). KVK and VAT are on file. Do not run `make business-go-live` just to flip the flag — it no longer auto-opens Checkout.
 
 ---
 
@@ -104,7 +104,7 @@ Quote setup **separately** from the subscription. Handshake setup (€79.99) is 
 - Invoice shows excl. + BTW + incl. where applicable.
 - EU B2B outside NL: may be reverse-charge / 0% with valid VAT ID — confirm with bookkeeping; do not invent VAT rules in sales copy.
 - Say verbally: *“€49,99 per maand exclusief BTW”* so nobody thinks Hostinger-level all-in pricing.
-- **Registration gate:** KVK + legal name are on file. VAT is deferred. Stripe `charges_enabled` is true. Ops already has `sk_live_` in Settings. Keep `self_serve_live_payments=false` until you want public card Checkout.
+- **Registration gate:** KVK `42140905` + legal name Cronnecture + BTW-id are on file. Stripe `charges_enabled` is true. Ops already has `sk_live_` in Settings. Keep `self_serve_live_payments=false` until you want public card Checkout.
 
 ---
 
@@ -142,7 +142,7 @@ Website €49.99 leaves little room after COGS for support time. Do not race mon
 - [x] Handshake NoordDrive kept at €39.99/mo + €79.99 setup (not a public SKU).
 - [x] Ops Settings pointed at live `price_…` IDs (`stripe_pack_prices` / `stripe_addon_prices`). Default price is Website €49.99, not handshake.
 - [x] KVK on file (`42140905`); legal name Cronnecture
-- [ ] VAT deferred (not required now)
+- [x] VAT on file (BTW-id + omzetbelastingnummer in encrypted settings; 21% NL B2B)
 - [x] Stripe `charges_enabled` / `payouts_enabled` (2026-08-19)
 - [ ] Customer Portal live configuration (Dashboard activate — see [stripe-billing.md](../platform/stripe-billing.md))
 - [ ] `self_serve_live_payments=true` only when you want public card Checkout

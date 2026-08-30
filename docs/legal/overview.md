@@ -3,8 +3,8 @@
 Operational legal documents for Cronnecture (Dutch sole-trader / BV-bound SaaS hosting).  
 **Not a substitute for advocaat advice** — review before scaling live card charging.
 
-Current on-disk pack: **v2026.08.19.1** (published **2026-08-19**, **effective immediately**, notice waived).  
-Public `/legal/*.pdf` and `/start` clickwrap serve this pack as **Current**. No Upcoming notice window. Prior pack **v2026.08.10.3** is archived.
+Current on-disk pack: **v2026.08.27.1** (published **2026-08-27**, **effective immediately**, notice waived so public PDFs match VAT-on invoices).  
+Public `/legal/*.pdf` and `/start` clickwrap serve this pack as **Current**. Prior pack **v2026.08.19.1** is archived.
 
 ## Versioning + prior notice
 
@@ -70,7 +70,8 @@ Filled from platform settings when present (`make business-go-live`):
 | `LEGAL_NAME` / brand | `business_legal_name` (else **Cronnecture**) |
 | `PROPRIETOR_NAME` | `business_proprietor_name` (else **S. J. Braad (Sven Braad)**) |
 | `KVK` | `business_kvk` — **row omitted if empty** |
-| `VAT` | `business_vat` — **row omitted if empty** |
+| `VAT` / BTW-id | `business_vat` — **row omitted if empty** |
+| `OMZETBELASTINGNUMMER` | `business_omzetbelastingnummer` — **row omitted if empty** |
 | `REGISTERED_ADDRESS` | `business_registered_address` — omitted if empty |
 | Support / privacy | `ops_notify_email` / `business_privacy_email` (else `support@cronnecture.com`) |
 
@@ -79,7 +80,7 @@ Do not narrate “pending registration” or “payment unlocks after KVK” in 
 
 ## Commercial posture in the pack
 
-Production-grade hosting terms: Stripe, invoice, and Tikkie billing; soft SLA; 90-day payment-required window; versioned notice. Orders start through contact, email, or `/start`. The pack describes the live service only.
+Production-grade hosting terms: invoices from Cronnecture’s own system; Stripe collects card/SEPA; 21% NL BTW; reverse-charge for qualifying EU B2B; soft SLA; 90-day payment-required window; versioned notice. Orders start through contact, email, or `/start`. The pack describes the live service only.
 
 ## Public vs internal
 

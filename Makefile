@@ -8,7 +8,7 @@ export FLEET_ROOT=$(ANSIBLE_DIR)
 export ANSIBLE_CONFIG=$(ANSIBLE_DIR)/ansible.cfg
 
 .PHONY: help deploy site stack baseline cluster cloudflare clients auto-heal reboot-node \
-	control-plane control-plane-hot identity mail health ping ansible check check-smoke \
+	control-plane control-plane-hot identity gitea nfs-rwx mail health scale-hint gitea-scale-hint sync-local-images ping ansible check check-smoke \
 	marketing portfolio identity-failsafe
 
 help:
@@ -28,6 +28,8 @@ help:
 	@echo "  make cloudflare       Sync CF edge + portals"
 	@echo "  make clients          Sync client tunnels"
 	@echo "  make auto-heal        Watchdog --heal"
+	@echo "  make scale-hint       Packed pool → add-node hint"
+	@echo "  make sync-local-images  Copy Never images onto workers (HOST= optional)"
 	@echo "  make reboot-node HOST=…  SSH reboot a node"
 	@echo "  make identity-failsafe  Auth HA status (RB-16)"
 	@echo ""
@@ -53,6 +55,6 @@ ansible:
 
 # Forward the fleet Makefile so operators stay in /home/dev/stack.
 site stack baseline cluster cloudflare clients auto-heal control-plane control-plane-hot \
-identity mail health ping lockdown fleet-ops siem-teardown reboot-node isolate-node \
+identity gitea nfs-rwx mail health scale-hint gitea-scale-hint sync-local-images ping lockdown fleet-ops siem-teardown reboot-node isolate-node \
 restart-service incident-scan:
 	$(MAKE) -C $(ANSIBLE_DIR) $@

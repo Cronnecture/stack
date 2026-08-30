@@ -201,7 +201,7 @@ Control plane pods should show **2/2 Ready** (2 uvicorn workers per pod). If one
 | Deploy ops UI changes | [RB-04](../runbooks/deploy-control-plane.md) |
 | **Cluster maintenance page** | Ops UI → **Home** or **Automations** → **Cluster maintenance**; served at **Cloudflare edge** for **client + marketing** hostnames (see [maintenance.md](maintenance.md)); auto-enabled during **control_plane**, **cluster**, **site**, **Platform refresh** jobs; ops/webmail/portal host bypassed |
 | New client | [RB-05](../runbooks/onboard-client.md) |
-| Self-serve Pilot | Public [client.cronnecture.com/start](https://client.cronnecture.com/start); live pay gated until KVK/VAT (~2026-08-18) — see [stripe-billing.md](../platform/stripe-billing.md#self-serve-standard-pilot) |
+| Self-serve Website | Public [client.cronnecture.com/start](https://client.cronnecture.com/start); live card pay stays off until you flip `self_serve_live_payments` — see [stripe-billing.md](../platform/stripe-billing.md#self-serve-website-checkout) |
 | Audit Cloudflare drift | Ops UI → **Platform → Inventory** ([control-plane.md](../platform/control-plane.md#fleet-cloudflare-inventory)) |
 | Baseline / cluster / CF sync | Ops UI → **Platform → Fleet** → **Infrastructure operations** |
 | Cordon / drain a node | Ops UI → **Platform → Fleet** → node **Actions** |
